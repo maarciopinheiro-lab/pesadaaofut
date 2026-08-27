@@ -341,13 +341,37 @@ async function startServer() {
         return;
       }
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('notifications_config')
         .select('*')
         .eq('id', 1)
         .single();
 
-      if (error) throw error;
+      if (error || !data) {
+        // Se a linha não existe, insere a linha padrão id=1
+        const defaultRow = {
+          id: 1,
+          notif1_active: false,
+          notif1_title: 'Pesadão F.C.',
+          notif1_body: 'Não perca nossa próxima partida de domingo!',
+          notif1_date: '',
+          notif1_time: '09:00',
+          notif1_status: 'pending',
+          notif2_active: false,
+          notif2_title: 'Mensalidade do Pesadão',
+          notif2_body: 'Lembre-se de realizar o pagamento da mensalidade!',
+          notif2_date: '',
+          notif2_time: '09:00',
+          notif2_status: 'pending'
+        };
+        const insertRes = await supabase.from('notifications_config').upsert(defaultRow).select().single();
+        if (!insertRes.error && insertRes.data) {
+          data = insertRes.data;
+        } else {
+          data = defaultRow;
+        }
+      }
+
       res.json(data);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -366,14 +390,29 @@ async function startServer() {
       const incoming = req.body;
       const { data: current } = await supabase.from('notifications_config').select('*').eq('id', 1).single();
 
-      const updatePayload = { ...incoming };
+      const updatePayload = {
+        id: 1,
+        notif1_active: !!incoming.notif1_active,
+        notif1_title: incoming.notif1_title || '',
+        notif1_body: incoming.notif1_body || '',
+        notif1_date: incoming.notif1_date || '',
+        notif1_time: incoming.notif1_time || '09:00',
+        notif1_status: incoming.notif1_status || 'pending',
+        notif2_active: !!incoming.notif2_active,
+        notif2_title: incoming.notif2_title || '',
+        notif2_body: incoming.notif2_body || '',
+        notif2_date: incoming.notif2_date || '',
+        notif2_time: incoming.notif2_time || '09:00',
+        notif2_status: incoming.notif2_status || 'pending',
+        updated_at: new Date().toISOString()
+      };
 
       if (current) {
         // Se ativou ou mudou data/hora ou estava sent/failed, resetar para pending
-        if (incoming.notif1_active) {
+        if (updatePayload.notif1_active) {
           if (
-            incoming.notif1_date !== current.notif1_date ||
-            incoming.notif1_time !== current.notif1_time ||
+            updatePayload.notif1_date !== current.notif1_date ||
+            updatePayload.notif1_time !== current.notif1_time ||
             current.notif1_status === 'sent' ||
             current.notif1_status === 'failed' ||
             !current.notif1_status
@@ -381,10 +420,10 @@ async function startServer() {
             updatePayload.notif1_status = 'pending';
           }
         }
-        if (incoming.notif2_active) {
+        if (updatePayload.notif2_active) {
           if (
-            incoming.notif2_date !== current.notif2_date ||
-            incoming.notif2_time !== current.notif2_time ||
+            updatePayload.notif2_date !== current.notif2_date ||
+            updatePayload.notif2_time !== current.notif2_time ||
             current.notif2_status === 'sent' ||
             current.notif2_status === 'failed' ||
             !current.notif2_status
@@ -396,11 +435,12 @@ async function startServer() {
 
       const { data, error } = await supabase
         .from('notifications_config')
-        .update(updatePayload)
-        .eq('id', 1);
+        .upsert(updatePayload)
+        .select()
+        .single();
 
       if (error) throw error;
-      res.json({ success: true, message: 'Configurações salvas com sucesso.' });
+      res.json({ success: true, message: 'Configurações salvas com sucesso.', data });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
