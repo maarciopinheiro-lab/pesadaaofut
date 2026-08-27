@@ -204,6 +204,121 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
   }
 }
 
+export const defaultPushConfig = {
+  id: 1,
+  notif1_active: false,
+  notif1_title: 'Pesadão F.C.',
+  notif1_body: 'Não perca nossa próxima partida de domingo!',
+  notif1_date: '',
+  notif1_time: '09:00',
+  notif1_status: 'pending',
+  notif2_active: false,
+  notif2_title: 'Mensalidade do Pesadão',
+  notif2_body: 'Lembre-se de realizar o pagamento da mensalidade!',
+  notif2_date: '',
+  notif2_time: '09:00',
+  notif2_status: 'pending'
+};
+
+let inMemoryPushConfig = { ...defaultPushConfig };
+
+export async function getStoredPushConfig(): Promise<any> {
+  const supabase = getAdminSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('notifications_config')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
+
+      if (!error && data) {
+        inMemoryPushConfig = { ...defaultPushConfig, ...data };
+        return inMemoryPushConfig;
+      }
+    } catch (e1) {
+      // Tabela pode não existir
+    }
+
+    try {
+      const { data: authBackup } = await supabase
+        .from('whatsapp_auth')
+        .select('data')
+        .eq('id', 'notifications_config_v1')
+        .maybeSingle();
+
+      if (authBackup && authBackup.data) {
+        const parsed = typeof authBackup.data === 'string' ? JSON.parse(authBackup.data) : authBackup.data;
+        inMemoryPushConfig = { ...defaultPushConfig, ...parsed };
+        return inMemoryPushConfig;
+      }
+    } catch (e2) {
+      // Backup falhou
+    }
+  }
+
+  return inMemoryPushConfig;
+}
+
+export async function saveStoredPushConfig(incoming: any): Promise<any> {
+  const current = await getStoredPushConfig();
+
+  const updated = {
+    ...current,
+    ...incoming,
+    id: 1,
+    updated_at: new Date().toISOString()
+  };
+
+  if (updated.notif1_active) {
+    if (
+      updated.notif1_date !== current.notif1_date ||
+      updated.notif1_time !== current.notif1_time ||
+      current.notif1_status === 'sent' ||
+      current.notif1_status === 'failed' ||
+      !current.notif1_status
+    ) {
+      updated.notif1_status = 'pending';
+    }
+  }
+  if (updated.notif2_active) {
+    if (
+      updated.notif2_date !== current.notif2_date ||
+      updated.notif2_time !== current.notif2_time ||
+      current.notif2_status === 'sent' ||
+      current.notif2_status === 'failed' ||
+      !current.notif2_status
+    ) {
+      updated.notif2_status = 'pending';
+    }
+  }
+
+  inMemoryPushConfig = updated;
+
+  const supabase = getAdminSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('whatsapp_auth').upsert({
+        id: 'notifications_config_v1',
+        data: updated,
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('[PushService] Falha ao salvar backup em whatsapp_auth:', e);
+    }
+
+    try {
+      await supabase
+        .from('notifications_config')
+        .upsert(updated);
+    } catch (e) {
+      // Ignorar se tabela não existir
+    }
+  }
+
+  return updated;
+}
+
 /**
  * Função de verificação agendada executada pelo cron.
  * Compara as configurações salvas com o horário atual de America/Sao_Paulo
@@ -213,17 +328,9 @@ export async function checkAndSendScheduledNotifications(): Promise<void> {
   if (!supabase) return;
 
   try {
-    // 1. Obter a configuração única
-    const { data: config, error } = await supabase
-      .from('notifications_config')
-      .select('*')
-      .eq('id', 1)
-      .single();
-
-    if (error || !config) {
-      console.error('[PushService] Erro ao carregar configurações de notificação agendada:', error);
-      return;
-    }
+    // 1. Obter a configuração usando getStoredPushConfig para garantir resiliência total
+    const config = await getStoredPushConfig();
+    if (!config) return;
 
     // 2. Obter data e hora atuais no fuso America/Sao_Paulo
     const now = new Date();
@@ -241,7 +348,6 @@ export async function checkAndSendScheduledNotifications(): Promise<void> {
       hour12: false
     });
 
-    // Formato pt-BR retorna DD/MM/YYYY. Vamos converter para YYYY-MM-DD
     const parts = dtfDate.formatToParts(now);
     const year = parts.find(p => p.type === 'year')?.value;
     const month = parts.find(p => p.type === 'month')?.value;
@@ -256,34 +362,14 @@ export async function checkAndSendScheduledNotifications(): Promise<void> {
       if (config.notif1_date === currentDate && config.notif1_time === currentTime) {
         console.log('[PushService Cron] Disparando Notificação 1 agendada...');
         
-        // Bloqueio otimista de concorrência: altera o status para evitar duplicidade
-        const { error: lockError } = await supabase
-          .from('notifications_config')
-          .update({ notif1_status: 'sending', updated_at: new Date().toISOString() })
-          .eq('id', 1)
-          .eq('notif1_status', 'pending');
+        await saveStoredPushConfig({ ...config, notif1_status: 'sending' });
 
-        if (!lockError) {
-          try {
-            const result = await sendPushToAll(config.notif1_title, config.notif1_body);
-            await supabase
-              .from('notifications_config')
-              .update({
-                notif1_status: 'sent',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', 1);
-            console.log(`[PushService Cron] Notificação 1 enviada com sucesso para ${result.successCount} aparelhos.`);
-          } catch (sendErr: any) {
-            await supabase
-              .from('notifications_config')
-              .update({
-                notif1_status: 'failed',
-                notif1_error: sendErr.message || 'Erro de envio',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', 1);
-          }
+        try {
+          const result = await sendPushToAll(config.notif1_title, config.notif1_body);
+          await saveStoredPushConfig({ ...config, notif1_status: 'sent' });
+          console.log(`[PushService Cron] Notificação 1 enviada com sucesso para ${result.successCount} aparelhos.`);
+        } catch (sendErr: any) {
+          await saveStoredPushConfig({ ...config, notif1_status: 'failed', notif1_error: sendErr.message || 'Erro de envio' });
         }
       }
     }
@@ -293,34 +379,14 @@ export async function checkAndSendScheduledNotifications(): Promise<void> {
       if (config.notif2_date === currentDate && config.notif2_time === currentTime) {
         console.log('[PushService Cron] Disparando Notificação 2 agendada...');
         
-        // Bloqueio otimista de concorrência
-        const { error: lockError } = await supabase
-          .from('notifications_config')
-          .update({ notif2_status: 'sending', updated_at: new Date().toISOString() })
-          .eq('id', 1)
-          .eq('notif2_status', 'pending');
+        await saveStoredPushConfig({ ...config, notif2_status: 'sending' });
 
-        if (!lockError) {
-          try {
-            const result = await sendPushToAll(config.notif2_title, config.notif2_body);
-            await supabase
-              .from('notifications_config')
-              .update({
-                notif2_status: 'sent',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', 1);
-            console.log(`[PushService Cron] Notificação 2 enviada com sucesso para ${result.successCount} aparelhos.`);
-          } catch (sendErr: any) {
-            await supabase
-              .from('notifications_config')
-              .update({
-                notif2_status: 'failed',
-                notif2_error: sendErr.message || 'Erro de envio',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', 1);
-          }
+        try {
+          const result = await sendPushToAll(config.notif2_title, config.notif2_body);
+          await saveStoredPushConfig({ ...config, notif2_status: 'sent' });
+          console.log(`[PushService Cron] Notificação 2 enviada com sucesso para ${result.successCount} aparelhos.`);
+        } catch (sendErr: any) {
+          await saveStoredPushConfig({ ...config, notif2_status: 'failed', notif2_error: sendErr.message || 'Erro de envio' });
         }
       }
     }
