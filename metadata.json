@@ -1,0 +1,8 @@
+{
+  "name": "APP Pesadao - WHATSAPP + NOTIFICACAO",
+  "description": "A minimalist dashboard for managing soccer team monthly fees with player tracking and financial overview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
