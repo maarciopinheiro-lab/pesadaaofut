@@ -165,17 +165,6 @@ const App: React.FC = () => {
   const [autoPwaAthleteId, setAutoPwaAthleteId] = useState('');
   const [autoPwaWhatsapp, setAutoPwaWhatsapp] = useState('');
   const [isRegisteringAutoPwa, setIsRegisteringAutoPwa] = useState(false);
-  const [isNotifConfigured, setIsNotifConfigured] = useState<boolean>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const isLinked = localStorage.getItem('pwa_device_linked') === 'true';
-        const isPermGranted = localStorage.getItem('fcm_permission_granted') === 'true';
-        const isNotifDone = localStorage.getItem('pesadao_notif_configured') === 'true';
-        return isLinked || isPermGranted || isNotifDone;
-      }
-    } catch (e) {}
-    return false;
-  });
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -340,17 +329,17 @@ const App: React.FC = () => {
 
   // Verificar se precisa exibir o banner de vincular aparelho PWA automaticamente ao abrir o app
   useEffect(() => {
-    const isDeviceLinked = localStorage.getItem('pwa_device_linked') === 'true' || localStorage.getItem('fcm_permission_granted') === 'true' || localStorage.getItem('pesadao_notif_configured') === 'true';
+    const isDeviceLinked = localStorage.getItem('pwa_device_linked') === 'true';
     const isDismissed = sessionStorage.getItem('pwa_prompt_dismissed') === 'true';
     const perm = getNotificationPermissionStatus();
 
-    if (!isDeviceLinked && !isDismissed && !isNotifConfigured && perm !== 'denied') {
+    if (!isDeviceLinked && !isDismissed && perm !== 'denied') {
       const timer = setTimeout(() => {
         setShowAutoPwaPrompt(true);
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isNotifConfigured]);
+  }, []);
 
   const handlePerformLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,9 +438,6 @@ const App: React.FC = () => {
 
       if (result.success) {
         localStorage.setItem('pwa_device_linked', 'true');
-        localStorage.setItem('fcm_permission_granted', 'true');
-        localStorage.setItem('pesadao_notif_configured', 'true');
-        setIsNotifConfigured(true);
         setShowAutoPwaPrompt(false);
       } else {
         alert(result.error || 'Erro ao registrar notificações.');
@@ -1301,7 +1287,7 @@ const App: React.FC = () => {
 
     return (
     <div className="space-y-8 animation-fade-in pb-20">
-        {userRole === 'player' && !isNotifConfigured && (
+        {userRole === 'player' && (
           <div className="bg-gradient-to-r from-green-600/10 via-primary/10 to-green-500/10 border border-green-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
             <div className="flex items-center gap-3.5">
               <div className="w-11 h-11 rounded-2xl bg-green-500/20 text-green-500 flex items-center justify-center shrink-0 shadow-inner">
