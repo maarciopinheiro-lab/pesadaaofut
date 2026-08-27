@@ -26,6 +26,26 @@ const App: React.FC = () => {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isPwaInstalled, setIsPwaInstalled] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        return window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  // Tela Inicial Pré-Login: 'install' (Boas-vindas/Instalação PWA) ou 'login' (Formulário de Acesso)
+  const [preLoginStep, setPreLoginStep] = useState<'install' | 'login'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+        if (isStandalone) return 'login';
+      }
+    } catch (e) {}
+    return 'install';
+  });
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -48,22 +68,42 @@ const App: React.FC = () => {
       }
     };
 
+    const handleAppInstalled = () => {
+      setIsPwaInstalled(true);
+      setShowInstallPrompt(false);
+      setDeferredPrompt(null);
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsPwaInstalled(true);
       setShowInstallPrompt(false);
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(deferredPrompt);
-      setShowInstallPrompt(false);
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          setIsPwaInstalled(true);
+          setShowInstallPrompt(false);
+          setDeferredPrompt(null);
+        }
+      } catch (e) {
+        console.warn('Erro ao disparar prompt de instalação:', e);
+        setShowInstallGuideModal(true);
+      }
+    } else {
+      setShowInstallGuideModal(true);
     }
   };
 
@@ -1478,6 +1518,189 @@ const App: React.FC = () => {
     );
   };
 
+  const renderWelcomeInstallScreen = () => {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-display">
+        {/* Efeitos de Fundo Luminosos */}
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#f9abd8]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="w-full max-w-lg bg-surface-light dark:bg-surface-dark border border-white/10 dark:border-white/10 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative z-10 space-y-6 animate-fade-in">
+          {/* Topo / Identidade Visual */}
+          <div className="flex flex-col items-center text-center">
+            <div className="w-24 h-24 rounded-3xl bg-white/[0.03] border border-white/10 p-2.5 flex items-center justify-center mb-3 shadow-xl relative group">
+              <img src={TEAM_LOGO_URL} alt="Pesadão F.C." className="w-full h-full object-contain" />
+              {isPwaInstalled && (
+                <span className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 shadow-md">
+                  <span className="material-icons-outlined text-xs block">check</span>
+                </span>
+              )}
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/10 text-primary text-[10px] font-black uppercase tracking-widest mb-2">
+              <span className="material-icons-outlined text-xs">sports_soccer</span>
+              App Oficial do Time
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight">Pesadão F.C.</h2>
+          </div>
+
+          {/* Etapas de Instalação e Acesso */}
+          <div className="space-y-4">
+            {/* PASSO 1: INSTALAR */}
+            <div className="p-5 rounded-3xl bg-gray-50 dark:bg-black/30 border border-white/10 dark:border-white/10 space-y-3 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-0.5 rounded-full bg-white/[0.03] text-primary text-[9px] font-black uppercase tracking-wider border border-white/10">
+                  Passo 1
+                </span>
+                {isPwaInstalled ? (
+                  <span className="text-[11px] font-bold text-green-500 flex items-center gap-1">
+                    <span className="material-icons-outlined text-sm">verified</span>
+                    Instalado
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold text-muted-light">
+                    Recomendado para Atletas
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-tight text-gray-900 dark:text-white">
+                  Instalar Aplicativo no Celular
+                </h3>
+                <p className="text-[11px] text-muted-light mt-0.5 leading-relaxed">
+                  Adicione o atalho oficial na sua tela inicial para não perder avisos do WhatsApp e convocações de domingo.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="w-full py-4 bg-primary hover:bg-primary-hover text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/25 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-icons-outlined text-lg">
+                  {isPwaInstalled ? 'check_circle' : 'download_for_offline'}
+                </span>
+                {isPwaInstalled ? 'Aplicativo Instalado no Dispositivo' : '1. Instalar Aplicativo no Celular'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(true)}
+                className="w-full text-center text-[11px] font-bold text-primary hover:underline pt-1 block"
+              >
+                Como instalar no iPhone (iOS) ou Android? Ver passo a passo
+              </button>
+            </div>
+
+            {/* PASSO 2: LOGAR */}
+            <div className="p-5 rounded-3xl bg-gray-50 dark:bg-black/30 border border-white/10 dark:border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-0.5 rounded-full bg-white/[0.03] text-green-500 text-[9px] font-black uppercase tracking-wider border border-white/10">
+                  Passo 2
+                </span>
+                <span className="text-[10px] font-semibold text-muted-light">
+                  Acesso Direto
+                </span>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-tight text-gray-900 dark:text-white">
+                  Entrar no Painel do Time
+                </h3>
+                <p className="text-[11px] text-muted-light mt-0.5 leading-relaxed">
+                  Depois de instalar ou se você já possui o app no celular, acesse sua conta com login e senha.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPreLoginStep('login')}
+                className="w-full py-4 bg-surface-light dark:bg-surface-dark border-2 border-primary/40 hover:border-primary text-primary hover:bg-primary/5 font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-icons-outlined text-lg">login</span>
+                2. Logar no App do Pesadão
+              </button>
+            </div>
+          </div>
+
+          <div className="text-center pt-2">
+            <p className="text-[10px] text-muted-light">
+              Pesadão F.C. • Acesso restrito para atletas e diretoria
+            </p>
+          </div>
+        </div>
+
+        {/* MODAL DE TUTORIAL DE INSTALAÇÃO PASSO A PASSO (iOS / ANDROID) */}
+        {showInstallGuideModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+            <div className="bg-surface-light dark:bg-surface-dark border border-white/10 dark:border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+              <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-icons-outlined text-primary">smartphone</span>
+                  <h3 className="font-black text-sm uppercase tracking-tight">Como Instalar o App</h3>
+                </div>
+                <button
+                  onClick={() => setShowInstallGuideModal(false)}
+                  className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-muted-light hover:text-white"
+                >
+                  <span className="material-icons-outlined text-sm">close</span>
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs text-muted-light">
+                {/* GUIA IPHONE */}
+                <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-black/40 border border-white/10 dark:border-white/10 space-y-2">
+                  <div className="flex items-center gap-1.5 text-gray-900 dark:text-white font-bold text-xs">
+                    <span className="material-icons-outlined text-sm text-primary">apple</span>
+                    No iPhone (Safari):
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
+                    <li>Toque no botão de <strong>Compartilhar</strong> (quadrado com seta para cima ⎋) na barra inferior do Safari.</li>
+                    <li>Role para baixo e toque em <strong>"Adicionar à Tela de Início"</strong> (+).</li>
+                    <li>Toque em <strong>"Adicionar"</strong> no canto superior direito.</li>
+                  </ol>
+                </div>
+
+                {/* GUIA ANDROID */}
+                <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-black/40 border border-white/10 dark:border-white/10 space-y-2">
+                  <div className="flex items-center gap-1.5 text-gray-900 dark:text-white font-bold text-xs">
+                    <span className="material-icons-outlined text-sm text-green-500">android</span>
+                    No Android (Chrome):
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1.5 text-[11px] leading-relaxed">
+                    <li>Toque nos <strong>3 pontinhos (⋮)</strong> no canto superior direito do Chrome.</li>
+                    <li>Selecione <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.</li>
+                    <li>Confirme clicando em <strong>"Instalar"</strong>.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInstallGuideModal(false)}
+                  className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl"
+                >
+                  Entendi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInstallGuideModal(false);
+                    setPreLoginStep('login');
+                  }}
+                  className="flex-1 py-3 bg-primary text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-primary/20"
+                >
+                  Ir para Login
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderLoginScreen = () => {
     return (
       <div className="min-h-screen bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-display">
@@ -1485,9 +1708,24 @@ const App: React.FC = () => {
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#f9abd8]/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="w-full max-w-md bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative z-10 space-y-6 animate-fade-in">
+        <div className="w-full max-w-md bg-surface-light dark:bg-surface-dark border border-white/10 dark:border-white/10 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative z-10 space-y-6 animate-fade-in">
+          {/* Botão de Retornar à tela de instalação */}
+          <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
+            <button
+              type="button"
+              onClick={() => setPreLoginStep('install')}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-muted-light hover:text-primary transition-colors"
+            >
+              <span className="material-icons-outlined text-sm">arrow_back</span>
+              Instalação do App
+            </button>
+            <span className="text-[10px] font-black uppercase text-primary tracking-widest bg-white/[0.03] px-2.5 py-0.5 rounded-full border border-white/10">
+              Passo 2: Login
+            </span>
+          </div>
+
           <div className="flex flex-col items-center text-center">
-            <div className="w-20 h-20 rounded-3xl bg-primary/10 border border-primary/20 p-2 flex items-center justify-center mb-4 shadow-lg shadow-primary/10">
+            <div className="w-20 h-20 rounded-3xl bg-white/[0.03] border border-white/10 p-2 flex items-center justify-center mb-4 shadow-lg">
               <img src={TEAM_LOGO_URL} alt="Pesadão F.C." className="w-full h-full object-contain" />
             </div>
             <h2 className="text-2xl font-black uppercase tracking-tight">Pesadão F.C.</h2>
@@ -1569,8 +1807,11 @@ const App: React.FC = () => {
     );
   };
 
-  // Se não estiver logado, exibe a tela de login
+  // Se não estiver logado, exibe a tela de boas-vindas/instalação ou a tela de login
   if (!currentUser) {
+    if (preLoginStep === 'install') {
+      return renderWelcomeInstallScreen();
+    }
     return renderLoginScreen();
   }
 

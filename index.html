@@ -19,9 +19,11 @@
     <style>
       :root {
         --color-primary: #4E1B23;
+        --color-primary-rgb: 78 27 35;
       }
       .dark {
         --color-primary: #29caff;
+        --color-primary-rgb: 41 202 255;
       }
       
       .material-icons-outlined {
@@ -52,7 +54,7 @@
         theme: {
           extend: {
             colors: {
-              primary: "var(--color-primary)",
+              primary: "rgb(var(--color-primary-rgb) / <alpha-value>)",
               "background-light": "#F0F2F5",
               "background-dark": "#0B0E13",
               "surface-light": "#FFFFFF",

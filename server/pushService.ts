@@ -113,7 +113,12 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
       title: title,
       body: body,
     },
-    data: customData,
+    data: {
+      ...customData,
+      title: title,
+      body: body,
+      icon: 'https://i.imgur.com/CxbCPR5.png',
+    },
     webpush: {
       headers: {
         Urgency: 'high'
@@ -122,8 +127,10 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
         title: title,
         body: body,
         icon: 'https://i.imgur.com/CxbCPR5.png',
-        badge: 'https://i.imgur.com/CxbCPR5.png',
         vibrate: [100, 50, 100],
+        tag: 'pesadao-fc-notif',
+        renotify: true,
+        requireInteraction: false
       },
       fcmOptions: {
         link: '/'

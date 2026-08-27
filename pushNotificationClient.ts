@@ -40,8 +40,9 @@ if (typeof window !== 'undefined') {
                 reg.showNotification(title, {
                   body,
                   icon,
-                  badge: icon,
                   vibrate: [100, 50, 100],
+                  tag: 'pesadao-fc-notif',
+                  renotify: true
                 } as any);
               }).catch(() => {
                 try { new Notification(title, { body, icon }); } catch (e) {}
@@ -76,8 +77,9 @@ export function triggerLocalNotification(title: string, body: string, icon = 'ht
         reg.showNotification(title, {
           body,
           icon,
-          badge: icon,
           vibrate: [100, 50, 100],
+          tag: 'pesadao-fc-notif',
+          renotify: true
         } as any);
       }).catch(() => {
         try { new Notification(title, { body, icon }); } catch (e) {}

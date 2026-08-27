@@ -27,9 +27,10 @@ try {
     const options = {
       body: body,
       icon: icon,
-      badge: icon,
       vibrate: [100, 50, 100],
-      data: payload.data || {}
+      data: payload.data || {},
+      tag: 'pesadao-fc-notif',
+      renotify: true
     };
 
     return self.registration.showNotification(title, options);

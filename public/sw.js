@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pesadao-fc-v14';
+const CACHE_NAME = 'pesadao-fc-v15';
 const ASSETS = [
   '/',
   '/index.html',
@@ -70,15 +70,15 @@ self.addEventListener('push', (event) => {
   const notificationData = data.notification || data.data || {};
   const title = notificationData.title || data.title || 'Pesadão F.C.';
   const body = notificationData.body || data.body || 'Nova notificação recebida!';
-  const icon = notificationData.icon || 'https://i.imgur.com/CxbCPR5.png';
-  const badge = notificationData.badge || 'https://i.imgur.com/CxbCPR5.png';
+  const icon = notificationData.icon || data.icon || 'https://i.imgur.com/CxbCPR5.png';
 
   const options = {
     body: body,
     icon: icon,
-    badge: badge,
     vibrate: [100, 50, 100],
-    data: data.data || {}
+    data: data.data || {},
+    tag: 'pesadao-fc-notif',
+    renotify: true
   };
 
   event.waitUntil(
