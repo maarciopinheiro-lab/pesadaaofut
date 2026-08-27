@@ -35,11 +35,12 @@ const App: React.FC = () => {
     return false;
   });
 
-  // Estado para tela de bloqueio/conclusão amigável no navegador após instalação
+  // Estado para tela de bloqueio/conclusão amigável no navegador após instalação (somente quando explicitamente instalado)
   const [hasInstalledInBrowser, setHasInstalledInBrowser] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+        // Não marcar como instalado por padrão na primeira visita. Requer evento de instalação ou clique no guia.
         if (!isStandalone && localStorage.getItem('pesadao_pwa_installed_browser') === 'true') {
           return true;
         }
@@ -48,7 +49,7 @@ const App: React.FC = () => {
     return false;
   });
 
-  // Tela Inicial Pré-Login: 'install' (Boas-vindas/Instalação PWA) ou 'login' (Formulário de Acesso)
+  // Tela Inicial Pré-Login: Sempre 'install' no primeiro acesso para novos usuários passarem pelo passo a passo
   const [preLoginStep, setPreLoginStep] = useState<'install' | 'login'>(() => {
     try {
       if (typeof window !== 'undefined') {
