@@ -121,12 +121,14 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
     },
     webpush: {
       headers: {
-        Urgency: 'high'
+        Urgency: 'high',
+        'TTL': '86400'
       },
       notification: {
         title: title,
         body: body,
         icon: 'https://i.imgur.com/CxbCPR5.png',
+        badge: 'https://i.imgur.com/CxbCPR5.png',
         vibrate: [100, 50, 100],
         tag: 'pesadao-fc-notif',
         renotify: true,
@@ -134,6 +136,22 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
       },
       fcmOptions: {
         link: '/'
+      }
+    },
+    apns: {
+      headers: {
+        'apns-priority': '10',
+      },
+      payload: {
+        aps: {
+          alert: {
+            title: title,
+            body: body,
+          },
+          sound: 'default',
+          badge: 1,
+          contentAvailable: true
+        }
       }
     }
   };

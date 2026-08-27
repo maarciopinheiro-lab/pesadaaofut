@@ -66,23 +66,25 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  // FCM legacy format vs standard format support
-  const notificationData = data.notification || data.data || {};
-  const title = notificationData.title || data.title || 'Pesadão F.C.';
-  const body = notificationData.body || data.body || 'Nova notificação recebida!';
+  // FCM legacy format vs standard format vs APNs payload support
+  const notificationData = data.notification || data.data || data.aps?.alert || {};
+  const title = notificationData.title || notificationData || data.title || 'Pesadão F.C.';
+  const body = notificationData.body || notificationData || data.body || 'Nova notificação recebida!';
   const icon = notificationData.icon || data.icon || 'https://i.imgur.com/CxbCPR5.png';
 
   const options = {
-    body: body,
+    body: typeof body === 'string' ? body : 'Nova notificação recebida!',
     icon: icon,
+    badge: 'https://i.imgur.com/CxbCPR5.png',
     vibrate: [100, 50, 100],
-    data: data.data || {},
+    data: data.data || data || {},
     tag: 'pesadao-fc-notif',
-    renotify: true
+    renotify: true,
+    requireInteraction: false
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    self.registration.showNotification(typeof title === 'string' ? title : 'Pesadão F.C.', options)
   );
 });
 
