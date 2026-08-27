@@ -46,6 +46,9 @@ async function startServer() {
       const isForce = req.query.force === 'true' || req.body?.force === true;
       console.log(`[WebhookCron] Recebido sinal de cron/keep-alive (force: ${isForce})...`);
       
+      // 0. Verificar e disparar notificações push agendadas
+      await checkAndSendScheduledNotifications();
+
       // 1. Verificar e enfileirar agendamentos semanais devidos
       const enqueuedCount = await whatsappService.enqueueDueSchedules(isForce);
 
@@ -360,9 +363,40 @@ async function startServer() {
         return;
       }
 
+      const incoming = req.body;
+      const { data: current } = await supabase.from('notifications_config').select('*').eq('id', 1).single();
+
+      const updatePayload = { ...incoming };
+
+      if (current) {
+        // Se ativou ou mudou data/hora ou estava sent/failed, resetar para pending
+        if (incoming.notif1_active) {
+          if (
+            incoming.notif1_date !== current.notif1_date ||
+            incoming.notif1_time !== current.notif1_time ||
+            current.notif1_status === 'sent' ||
+            current.notif1_status === 'failed' ||
+            !current.notif1_status
+          ) {
+            updatePayload.notif1_status = 'pending';
+          }
+        }
+        if (incoming.notif2_active) {
+          if (
+            incoming.notif2_date !== current.notif2_date ||
+            incoming.notif2_time !== current.notif2_time ||
+            current.notif2_status === 'sent' ||
+            current.notif2_status === 'failed' ||
+            !current.notif2_status
+          ) {
+            updatePayload.notif2_status = 'pending';
+          }
+        }
+      }
+
       const { data, error } = await supabase
         .from('notifications_config')
-        .update(req.body)
+        .update(updatePayload)
         .eq('id', 1);
 
       if (error) throw error;
@@ -371,6 +405,18 @@ async function startServer() {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Forçar checagem de push agendadas
+  const handlePushForceCron = async (req: express.Request, res: express.Response) => {
+    try {
+      await checkAndSendScheduledNotifications();
+      res.json({ success: true, message: 'Checagem de notificações push agendadas executada com sucesso.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+  app.get('/api/push/force-cron', handlePushForceCron);
+  app.post('/api/push/force-cron', handlePushForceCron);
 
   // Disparar uma notificação push de teste imediatamente
   app.post('/api/push/send-test', async (req, res) => {

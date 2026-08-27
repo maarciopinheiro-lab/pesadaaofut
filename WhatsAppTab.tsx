@@ -2702,6 +2702,27 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
                   >
                     {sendingPushTest ? 'Disparando...' : 'Enviar Alerta de Teste'}
                   </button>
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/push/force-cron');
+                        const data = await res.json();
+                        if (data.success) {
+                          showToast('Checagem de agendamentos push executada!', 'success');
+                          loadPushData();
+                        } else {
+                          showToast(data.error || 'Erro ao executar checagem.', 'error');
+                        }
+                      } catch (e) {
+                        showToast('Erro de comunicação.', 'error');
+                      }
+                    }}
+                    className="w-full py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-primary/10 hover:bg-primary/20 text-primary transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span className="material-icons-outlined text-sm">bolt</span>
+                    Forçar Checagem / Disparar Agendados Agora
+                  </button>
                   
                   {pushDevices.length === 0 && (
                     <p className="text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold text-center mt-1">
