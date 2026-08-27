@@ -415,6 +415,44 @@ async function startServer() {
     }
   });
 
+  // Excluir aparelho registrado (Painel Admin - DELETE e POST)
+  const handleDeleteDevice = async (req: express.Request, res: express.Response) => {
+    try {
+      const id = req.params.id || req.body?.id || req.query.id;
+      const fcmToken = req.body?.fcmToken || req.query.fcmToken || req.body?.fcm_token;
+      
+      const supabase = getAdminSupabase();
+      if (!supabase) {
+        res.status(500).json({ error: 'Supabase indisponível.' });
+        return;
+      }
+
+      let query = supabase.from('push_subscriptions').delete();
+
+      if (id && id !== 'undefined' && id !== 'null') {
+        query = query.eq('id', id);
+      } else if (fcmToken) {
+        query = query.eq('fcm_token', fcmToken);
+      } else {
+        res.status(400).json({ error: 'ID ou Token do dispositivo é obrigatório para exclusão.' });
+        return;
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+
+      console.log(`[API Push] Aparelho excluído com sucesso (ID: ${id || 'N/A'}, Token: ${fcmToken ? String(fcmToken).substring(0, 10) + '...' : 'N/A'}).`);
+      res.json({ success: true, message: 'Aparelho excluído com sucesso. Ele não receberá mais notificações.' });
+    } catch (err: any) {
+      console.error('[API Push] Erro ao excluir aparelho:', err);
+      res.status(500).json({ error: err.message || 'Erro ao excluir aparelho.' });
+    }
+  };
+
+  app.delete('/api/push/devices/:id', handleDeleteDevice);
+  app.delete('/api/push/devices', handleDeleteDevice);
+  app.post('/api/push/devices/delete', handleDeleteDevice);
+
   // Iniciar cron agendador minuto a minuto para notificações push
   cron.schedule('* * * * *', async () => {
     try {
