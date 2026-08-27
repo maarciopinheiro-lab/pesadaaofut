@@ -289,3 +289,45 @@ export async function syncTokenOnStartup(): Promise<void> {
     console.warn('[PushClient] Erro ao sincronizar token no startup:', err);
   }
 }
+
+/**
+ * Limpa todos os dados de notificação, tokens locais e cache do navegador
+ */
+export async function clearPushNotificationCacheAndStorage(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  try {
+    // 1. Remover chaves do localStorage referentes a PWA e Notificações
+    const keysToRemove = [
+      'fcm_token',
+      'fcm_permission_granted',
+      'pwa_device_linked',
+      'pwa_prompt_dismissed',
+      'fcm_player_name',
+      'fcm_whatsapp',
+      'fcm_player_id',
+      'pesadao_pwa_installed_browser',
+      'pwa_was_standalone'
+    ];
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    // 2. Limpar CacheStorage do navegador se disponível
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+      console.log('[PWA] CacheStorage limpo com sucesso.');
+    }
+
+    // 3. Desregistrar Service Workers ativos para reset completo
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        await registration.unregister();
+      }
+      console.log('[PWA] Service Workers desregistrados.');
+    }
+  } catch (err) {
+    console.warn('[PWA] Erro ao limpar cache e armazenamento:', err);
+  }
+}
+

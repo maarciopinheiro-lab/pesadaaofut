@@ -3,7 +3,7 @@ import { Player, DbPlayer, Match, DbMatch, UserRole, AuthUser } from './types';
 import { getSupabase, saveSupabaseKey, SUPABASE_URL } from './supabaseClient';
 import { WhatsAppTab } from './WhatsAppTab';
 import { previewMatchWhatsAppMessage, sendMatchWhatsAppReport, getWhatsAppConfig } from './whatsappClient';
-import { requestPermissionAndRegister, getNotificationPermissionStatus, syncTokenOnStartup } from './pushNotificationClient';
+import { requestPermissionAndRegister, getNotificationPermissionStatus, syncTokenOnStartup, clearPushNotificationCacheAndStorage } from './pushNotificationClient';
 
 const DEFAULT_FEE = 40;
 const TEAM_LOGO_URL = 'https://i.imgur.com/GSj0ZPy.png'; // Ícone transparente (Interno)
@@ -59,6 +59,46 @@ const App: React.FC = () => {
     return 'install';
   });
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+
+  // Estado para verificar se as notificações já foram configuradas/ativadas
+  const [isNotificationConfigured, setIsNotificationConfigured] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const isLinked = localStorage.getItem('pwa_device_linked') === 'true';
+        const isPermGranted = getNotificationPermissionStatus() === 'granted';
+        return isLinked || isPermGranted;
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  // Função para resetar cache, PWA e notificações voltando ao padrão
+  const resetPwaAndNotificationState = async () => {
+    await clearPushNotificationCacheAndStorage();
+    setIsPwaInstalled(false);
+    setIsNotificationConfigured(false);
+    setShowInstallPrompt(true);
+    setHasInstalledInBrowser(false);
+    setShowAutoPwaPrompt(false);
+    sessionStorage.removeItem('pwa_prompt_dismissed');
+  };
+
+  // Monitorar se o PWA foi desinstalado/excluído para limpar cache e resetar
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+        const wasStandalone = localStorage.getItem('pwa_was_standalone') === 'true';
+
+        if (isStandalone) {
+          localStorage.setItem('pwa_was_standalone', 'true');
+        } else if (wasStandalone) {
+          console.log('[PWA] PWA foi desinstalado. Limpando cache e restaurando ao padrão.');
+          resetPwaAndNotificationState();
+        }
+      }
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -438,6 +478,7 @@ const App: React.FC = () => {
 
       if (result.success) {
         localStorage.setItem('pwa_device_linked', 'true');
+        setIsNotificationConfigured(true);
         setShowAutoPwaPrompt(false);
       } else {
         alert(result.error || 'Erro ao registrar notificações.');
@@ -1287,9 +1328,19 @@ const App: React.FC = () => {
 
     return (
     <div className="space-y-8 animation-fade-in pb-20">
-        {userRole === 'player' && (
-          <div className="bg-gradient-to-r from-green-600/10 via-primary/10 to-green-500/10 border border-green-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
-            <div className="flex items-center gap-3.5">
+        {userRole === 'player' && !isNotificationConfigured && !sessionStorage.getItem('pwa_prompt_dismissed') && (
+          <div className="bg-gradient-to-r from-green-600/10 via-primary/10 to-green-500/10 border border-green-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in relative">
+            <button
+              onClick={() => {
+                sessionStorage.setItem('pwa_prompt_dismissed', 'true');
+                setIsNotificationConfigured(true);
+              }}
+              className="absolute top-2.5 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 transition-colors"
+              title="Fechar aviso"
+            >
+              <span className="material-icons-outlined text-sm">close</span>
+            </button>
+            <div className="flex items-center gap-3.5 pr-6 sm:pr-0">
               <div className="w-11 h-11 rounded-2xl bg-green-500/20 text-green-500 flex items-center justify-center shrink-0 shadow-inner">
                 <span className="material-icons-outlined text-2xl animate-bounce">notifications_active</span>
               </div>
@@ -1599,12 +1650,18 @@ const App: React.FC = () => {
               <button
                 type="button"
                 onClick={handleInstallClick}
-                className="w-full py-4 bg-primary hover:bg-primary-hover text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/25 active:scale-95 transition-all flex items-center justify-center gap-2"
+                className={`w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2.5 text-center leading-snug ${
+                  isPwaInstalled
+                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-600/20'
+                    : 'bg-primary hover:bg-primary-hover text-white shadow-primary/25'
+                }`}
               >
-                <span className="material-icons-outlined text-lg">
+                <span className="material-icons-outlined text-xl shrink-0">
                   {isPwaInstalled ? 'check_circle' : 'download_for_offline'}
                 </span>
-                {isPwaInstalled ? 'Aplicativo Instalado no Dispositivo' : '1. Instalar Aplicativo no Celular'}
+                <span className="text-center">
+                  {isPwaInstalled ? 'Aplicativo Instalado no Dispositivo' : '1. Instalar Aplicativo no Celular'}
+                </span>
               </button>
 
               <button
@@ -1965,6 +2022,25 @@ const App: React.FC = () => {
              </nav>
 
              <div className="flex items-center gap-2">
+               {/* Botão de Notificações ao lado do Sair */}
+               <button
+                 onClick={() => setShowAutoPwaPrompt(true)}
+                 title="Configurar Notificações do Celular"
+                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all ${
+                   isNotificationConfigured
+                     ? 'bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30'
+                     : 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/30 animate-pulse'
+                 }`}
+               >
+                 <span className="material-icons-outlined text-sm">notifications</span>
+                 <span className="hidden sm:inline">Notificações</span>
+                 {isNotificationConfigured ? (
+                   <span className="w-2 h-2 rounded-full bg-green-500 shrink-0"></span>
+                 ) : (
+                   <span className="w-2 h-2 rounded-full bg-yellow-500 shrink-0 animate-ping"></span>
+                 )}
+               </button>
+
                {/* Alternar Perfil ou Fazer Logout */}
                {userRole === 'admin' && (
                  <button 
@@ -2823,19 +2899,34 @@ const App: React.FC = () => {
         {showAutoPwaPrompt && (
           <div className="fixed inset-0 z-[115] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
             <div className="bg-surface-light dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] border border-primary/30 shadow-2xl p-6 md:p-8 relative space-y-4">
-              <div className="flex items-center gap-3">
+              <button 
+                onClick={dismissAutoPwaPrompt}
+                className="absolute top-6 right-6 w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center hover:bg-black/10 transition-colors"
+                title="Fechar"
+              >
+                <span className="material-icons-outlined text-sm">close</span>
+              </button>
+
+              <div className="flex items-center gap-3 pr-8">
                 <div className="w-12 h-12 rounded-2xl bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
                   <span className="material-icons-outlined text-2xl animate-bounce">notifications_active</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-wider text-green-500">Pesadão F.C. Notificações</span>
-                  <h3 className="text-base font-black uppercase tracking-tight">Bora fio, ativa as Notificações! 🔔</h3>
+                  <h3 className="text-base font-black uppercase tracking-tight">Configurar Notificações 🔔</h3>
                 </div>
               </div>
 
               <p className="text-xs text-muted-light leading-relaxed">
-                Ativa aí para receber avisos de convocação, placares e relatórios do Pesadão no seu celular e registrar seu WhatsApp no BOT do time!
+                Ative para receber alertas de convocação, placares dos jogos e relatórios do Pesadão direto no seu celular!
               </p>
+
+              {isNotificationConfigured && (
+                <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-2 text-xs text-green-600 dark:text-green-400 font-bold">
+                  <span className="material-icons-outlined text-base shrink-0">verified</span>
+                  <span>Notificações já estão ativas e vinculadas neste aparelho!</span>
+                </div>
+              )}
 
               <div className="space-y-4 pt-2">
                 <div>
@@ -2871,7 +2962,7 @@ const App: React.FC = () => {
                     onClick={dismissAutoPwaPrompt}
                     className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-black/30 text-xs font-bold text-muted-light hover:bg-gray-200 transition-colors"
                   >
-                    Mais tarde
+                    Fechar
                   </button>
                   <button 
                     type="button" 
@@ -2887,6 +2978,22 @@ const App: React.FC = () => {
                         Ativar no Meu Celular
                       </>
                     )}
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-800 text-center">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (confirm('Deseja limpar o cache e restaurar o PWA às configurações padrão?')) {
+                        await resetPwaAndNotificationState();
+                        alert('Cache limpo e configurações restauradas ao padrão!');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-light hover:text-red-500 transition-colors"
+                  >
+                    <span className="material-icons-outlined text-xs">cleaning_services</span>
+                    Limpar Cache & Resetar PWA ao Padrão
                   </button>
                 </div>
               </div>
