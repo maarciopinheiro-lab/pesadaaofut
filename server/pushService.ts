@@ -132,7 +132,13 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
         vibrate: [100, 50, 100],
         tag: 'pesadao-fc-notif',
         renotify: true,
-        requireInteraction: false
+        requireInteraction: true
+      },
+      data: {
+        title: title,
+        body: body,
+        icon: 'https://i.imgur.com/CxbCPR5.png',
+        ...customData
       },
       fcmOptions: {
         link: '/'
@@ -141,6 +147,7 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
     apns: {
       headers: {
         'apns-priority': '10',
+        'apns-push-type': 'alert'
       },
       payload: {
         aps: {
@@ -151,7 +158,10 @@ export async function sendPushToAll(title: string, body: string, customData: Rec
           sound: 'default',
           badge: 1,
           contentAvailable: true
-        }
+        },
+        title: title,
+        body: body,
+        ...customData
       }
     }
   };

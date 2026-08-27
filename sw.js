@@ -59,32 +59,37 @@ self.addEventListener('push', (event) => {
       data = event.data.json();
     } catch (e) {
       try {
-        data = { notification: { title: 'Pesadão F.C.', body: event.data.text() } };
+        data = { data: { title: 'Pesadão F.C.', body: event.data.text() } };
       } catch (err) {
         data = {};
       }
     }
   }
 
-  // FCM legacy format vs standard format vs APNs payload support
-  const notificationData = data.notification || data.data || data.aps?.alert || {};
-  const title = notificationData.title || notificationData || data.title || 'Pesadão F.C.';
-  const body = notificationData.body || notificationData || data.body || 'Nova notificação recebida!';
+  console.log('[ServiceWorker] Push event received:', data);
+
+  const notificationData = data.notification || data.data || data.aps?.alert || data.payload?.aps?.alert || {};
+  
+  const title = notificationData.title || data.title || data.payload?.title || 'Pesadão F.C.';
+  const body = notificationData.body || data.body || data.payload?.body || 'Nova notificação recebida!';
   const icon = notificationData.icon || data.icon || 'https://i.imgur.com/CxbCPR5.png';
 
+  const finalTitle = typeof title === 'string' && title.trim() ? title : 'Pesadão F.C.';
+  const finalBody = typeof body === 'string' && body.trim() ? body : 'Nova notificação do Pesadão F.C.';
+
   const options = {
-    body: typeof body === 'string' ? body : 'Nova notificação recebida!',
+    body: finalBody,
     icon: icon,
     badge: 'https://i.imgur.com/CxbCPR5.png',
     vibrate: [100, 50, 100],
     data: data.data || data || {},
     tag: 'pesadao-fc-notif',
     renotify: true,
-    requireInteraction: false
+    requireInteraction: true
   };
 
   event.waitUntil(
-    self.registration.showNotification(typeof title === 'string' ? title : 'Pesadão F.C.', options)
+    self.registration.showNotification(finalTitle, options)
   );
 });
 
