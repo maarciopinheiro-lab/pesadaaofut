@@ -35,6 +35,19 @@ const App: React.FC = () => {
     return false;
   });
 
+  // Estado para tela de bloqueio/conclusão amigável no navegador após instalação
+  const [hasInstalledInBrowser, setHasInstalledInBrowser] = useState<boolean>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+        if (!isStandalone && localStorage.getItem('pesadao_pwa_installed_browser') === 'true') {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  });
+
   // Tela Inicial Pré-Login: 'install' (Boas-vindas/Instalação PWA) ou 'login' (Formulário de Acesso)
   const [preLoginStep, setPreLoginStep] = useState<'install' | 'login'>(() => {
     try {
@@ -72,6 +85,11 @@ const App: React.FC = () => {
       setIsPwaInstalled(true);
       setShowInstallPrompt(false);
       setDeferredPrompt(null);
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+      if (!isStandalone) {
+        setHasInstalledInBrowser(true);
+        localStorage.setItem('pesadao_pwa_installed_browser', 'true');
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -80,6 +98,7 @@ const App: React.FC = () => {
     if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
       setIsPwaInstalled(true);
       setShowInstallPrompt(false);
+      setHasInstalledInBrowser(false);
     }
 
     return () => {
@@ -97,6 +116,11 @@ const App: React.FC = () => {
           setIsPwaInstalled(true);
           setShowInstallPrompt(false);
           setDeferredPrompt(null);
+          const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+          if (!isStandalone) {
+            setHasInstalledInBrowser(true);
+            localStorage.setItem('pesadao_pwa_installed_browser', 'true');
+          }
         }
       } catch (e) {
         console.warn('Erro ao disparar prompt de instalação:', e);
@@ -1681,22 +1705,111 @@ const App: React.FC = () => {
                   onClick={() => setShowInstallGuideModal(false)}
                   className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl"
                 >
-                  Entendi
+                  Fechar
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     setShowInstallGuideModal(false);
-                    setPreLoginStep('login');
+                    const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+                    if (!isStandalone) {
+                      setHasInstalledInBrowser(true);
+                      localStorage.setItem('pesadao_pwa_installed_browser', 'true');
+                    } else {
+                      setPreLoginStep('login');
+                    }
                   }}
                   className="flex-1 py-3 bg-primary text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-lg shadow-primary/20"
                 >
-                  Ir para Login
+                  Já Adicionei o App
                 </button>
               </div>
             </div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderInstalledBrowserLockScreen = () => {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden font-display">
+        {/* Efeitos de Fundo Luminosos */}
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-green-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="w-full max-w-md bg-surface-light dark:bg-surface-dark border border-white/10 dark:border-white/10 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative z-10 space-y-6 text-center animate-fade-in">
+          {/* Topo / Escudo */}
+          <div className="flex flex-col items-center">
+            <div className="relative mb-3">
+              <div className="w-24 h-24 rounded-3xl bg-white/[0.03] border border-white/10 p-2.5 flex items-center justify-center shadow-xl">
+                <img src={TEAM_LOGO_URL} alt="Pesadão F.C." className="w-full h-full object-contain" />
+              </div>
+              <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1.5 shadow-lg animate-bounce">
+                <span className="material-icons-outlined text-sm block">check</span>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/10 text-green-500 text-[10px] font-black uppercase tracking-widest mb-2">
+              <span className="material-icons-outlined text-xs">verified</span>
+              Instalação Concluída
+            </div>
+
+            <h2 className="text-2xl font-black uppercase tracking-tight text-gray-900 dark:text-white">
+              Pesadão F.C.
+            </h2>
+          </div>
+
+          {/* Mensagem Principal Solicitada */}
+          <div className="p-5 rounded-3xl bg-green-500/10 border border-green-500/20 space-y-2.5">
+            <div className="text-3xl">🎉</div>
+            <h3 className="text-base font-black uppercase text-green-600 dark:text-green-400 tracking-tight">
+              Aplicativo instalado com sucesso!
+            </h3>
+            <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed font-medium">
+              Por favor, <strong>feche esta aba do navegador</strong> e abra o app <strong>Pesadão F.C.</strong> direto pela sua <strong>tela inicial</strong> para continuar.
+            </p>
+          </div>
+
+          {/* Passos rápidos */}
+          <div className="text-left bg-gray-50 dark:bg-black/30 border border-white/10 rounded-2xl p-4 space-y-2.5 text-xs text-muted-light">
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
+              <span>Feche esta aba do navegador.</span>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
+              <span>Abra o app <strong>Pesadão F.C.</strong> pelo ícone na tela inicial do seu celular.</span>
+            </div>
+          </div>
+
+          {/* Ações */}
+          <div className="space-y-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  window.close();
+                } catch (e) {}
+              }}
+              className="w-full py-4 bg-primary hover:bg-primary-hover text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/25 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span className="material-icons-outlined text-lg">close</span>
+              Fechar Esta Aba
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setHasInstalledInBrowser(false);
+                setPreLoginStep('login');
+              }}
+              className="w-full text-center text-[11px] font-semibold text-muted-light hover:text-primary transition-colors py-1 block"
+            >
+              Continuar no navegador mesmo assim
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -1806,6 +1919,14 @@ const App: React.FC = () => {
       </div>
     );
   };
+
+  // Se o app foi instalado e o usuário ainda está navegando pelo browser normal, exibe a tela de conclusão/fechamento
+  if (hasInstalledInBrowser) {
+    const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+    if (!isStandalone) {
+      return renderInstalledBrowserLockScreen();
+    }
+  }
 
   // Se não estiver logado, exibe a tela de boas-vindas/instalação ou a tela de login
   if (!currentUser) {
