@@ -236,8 +236,6 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
   const [selectedAthleteIdForLink, setSelectedAthleteIdForLink] = useState<string>('');
   const [customWhatsappForLink, setCustomWhatsappForLink] = useState<string>('');
   const [isLinkingDevice, setIsLinkingDevice] = useState(false);
-  const [deletingDeviceId, setDeletingDeviceId] = useState<string | null>(null);
-  const [deviceToDelete, setDeviceToDelete] = useState<any | null>(null);
 
   // Preview States
   const [liveBillingPreview, setLiveBillingPreview] = useState<string>('');
@@ -492,36 +490,6 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
       showToast(err.message || 'Erro ao processar vínculo.', 'error');
     } finally {
       setIsLinkingDevice(false);
-    }
-  };
-
-  const handleDeletePushDevice = async (device: any) => {
-    if (!device) return;
-    setDeletingDeviceId(device.id || device.fcm_token);
-    try {
-      const res = await fetch('/api/push/devices/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: device.id,
-          fcmToken: device.fcm_token || device.fcmToken,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast('Aparelho excluído com sucesso! Notificações desativadas para este aparelho.', 'success');
-        setPushDevices((prev) => prev.filter((d) => d.id !== device.id && d.fcm_token !== device.fcm_token));
-        setDeviceToDelete(null);
-        loadPushData();
-      } else {
-        showToast(data.error || 'Erro ao remover aparelho.', 'error');
-      }
-    } catch (err: any) {
-      showToast('Erro ao se conectar ao servidor.', 'error');
-    } finally {
-      setDeletingDeviceId(null);
     }
   };
 
@@ -2800,56 +2768,54 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
                       const dateStr = new Date(dev.updated_at || dev.created_at).toLocaleDateString('pt-BR');
 
                       return (
-                        <div key={dev.id} className="p-3 rounded-2xl bg-gray-50/80 dark:bg-gray-800/40 border border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 text-xs transition-all hover:border-gray-200 dark:hover:border-gray-700">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className="w-9 h-9 rounded-full overflow-hidden bg-primary/10 border border-primary/20 flex-shrink-0 flex items-center justify-center">
+                        <div key={dev.id} className="p-3.5 rounded-2xl bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary/10 border border-primary/20 flex-shrink-0 flex items-center justify-center">
                               {matchedPlayer?.photoUrl ? (
                                 <img src={matchedPlayer.photoUrl} alt={athleteName} className="w-full h-full object-cover" />
                               ) : (
-                                <span className="material-icons-outlined text-primary text-base">sports_soccer</span>
+                                <span className="material-icons-outlined text-primary text-xl">sports_soccer</span>
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <h5 className="font-semibold text-xs sm:text-sm text-gray-900 dark:text-white truncate">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h5 className="font-bold text-gray-900 dark:text-white truncate">
                                   {athleteName}
                                 </h5>
                                 {matchedPlayer && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-gray-200/70 dark:bg-gray-700/70 text-gray-600 dark:text-gray-300 shrink-0">
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                                     #{matchedPlayer.jerseyNumber} • {matchedPlayer.position}
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 min-w-0">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" title="Conexão Ativa"></span>
-                                <span className="truncate">{infoStr}</span>
-                                <span className="shrink-0">•</span>
-                                <span className="shrink-0">{dateStr}</span>
+                              <div className="flex items-center gap-2 text-[10px] text-muted-light mt-0.5 flex-wrap">
+                                <span className="flex items-center gap-0.5">
+                                  <span className="material-icons-outlined text-[10px]">devices</span>
+                                  {infoStr}
+                                </span>
+                                <span>•</span>
+                                <span>{dateStr}</span>
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                             {cleanPhone && (
                               <a
                                 href={`https://wa.me/55${cleanPhone}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg text-green-600 hover:bg-green-500/10 dark:text-green-400 transition-colors flex items-center justify-center"
+                                className="px-2.5 py-1.5 rounded-xl bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 font-bold text-[10px] flex items-center gap-1 transition-colors"
                                 title={`Conversar com ${athleteName} no WhatsApp`}
                               >
-                                <span className="material-icons-outlined text-base">chat</span>
+                                <span className="material-icons-outlined text-xs">chat</span>
+                                WhatsApp
                               </a>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => setDeviceToDelete(dev)}
-                              disabled={deletingDeviceId === dev.id}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-500/10 dark:hover:bg-red-500/20 transition-colors active:scale-95 disabled:opacity-50 flex items-center justify-center"
-                              title={`Excluir aparelho de ${athleteName}`}
-                            >
-                              <span className="material-icons-outlined text-base">delete_outline</span>
-                            </button>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500 border border-green-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                              Ativo
+                            </span>
                           </div>
                         </div>
                       );
@@ -2859,50 +2825,6 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
               </div>
             </div>
           </div>
-
-          {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE APARELHO */}
-          {deviceToDelete && (
-            <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
-              <div className="bg-surface-light dark:bg-surface-dark w-full max-w-sm rounded-3xl border border-gray-200 dark:border-gray-800 p-6 shadow-2xl space-y-4 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 mx-auto flex items-center justify-center">
-                  <span className="material-icons-outlined text-2xl">phonelink_erase</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">Excluir Aparelho?</h3>
-                  <p className="text-xs text-muted-light mt-1">
-                    Tem certeza que deseja excluir o aparelho registrado de <strong>{deviceToDelete.player_name || 'este atleta'}</strong>?
-                  </p>
-                  <p className="text-[11px] text-red-500 dark:text-red-400 mt-2 font-semibold">
-                    ⚠️ A partir deste momento, este jogador não receberá mais notificações do clube neste aparelho.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setDeviceToDelete(null)}
-                    className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold text-xs hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeletePushDevice(deviceToDelete)}
-                    disabled={deletingDeviceId === deviceToDelete.id}
-                    className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-lg shadow-red-600/20 transition-all flex items-center justify-center gap-1"
-                  >
-                    {deletingDeviceId === deviceToDelete.id ? (
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                    ) : (
-                      <>
-                        <span className="material-icons-outlined text-xs">delete</span>
-                        Excluir Aparelho
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* MODAL DE VINCULAR DISPOSITIVO COM SELEÇÃO DE ATLETA */}
           {isLinkDeviceModalOpen && (
