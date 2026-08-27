@@ -232,6 +232,10 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
   const [pushTestTitle, setPushTestTitle] = useState('Teste do Pesadão');
   const [pushTestBody, setPushTestBody] = useState('Esta é uma notificação de teste!');
   const [pushPermission, setPushPermission] = useState<'granted' | 'denied' | 'default'>('default');
+  const [isLinkDeviceModalOpen, setIsLinkDeviceModalOpen] = useState(false);
+  const [selectedAthleteIdForLink, setSelectedAthleteIdForLink] = useState<string>('');
+  const [customWhatsappForLink, setCustomWhatsappForLink] = useState<string>('');
+  const [isLinkingDevice, setIsLinkingDevice] = useState(false);
 
   // Preview States
   const [liveBillingPreview, setLiveBillingPreview] = useState<string>('');
@@ -447,15 +451,50 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
     }
   };
 
-  const handleActivatePush = async () => {
-    const result = await requestPermissionAndRegister();
-    setPushPermission(getNotificationPermissionStatus());
-    if (result.success) {
-      showToast('Notificações ativadas neste aparelho!', 'success');
-      loadPushData();
-    } else {
-      showToast(result.error || 'Erro ao ativar notificações.', 'error');
+  const handleOpenLinkModal = () => {
+    const savedName = localStorage.getItem('fcm_player_name') || '';
+    const savedId = localStorage.getItem('fcm_player_id') || '';
+    const savedZap = localStorage.getItem('fcm_whatsapp') || '';
+    if (savedId) setSelectedAthleteIdForLink(savedId);
+    else if (savedName) {
+      const match = players.find(p => p.name.toLowerCase() === savedName.toLowerCase());
+      if (match) setSelectedAthleteIdForLink(match.id);
     }
+    if (savedZap) setCustomWhatsappForLink(savedZap);
+    setIsLinkDeviceModalOpen(true);
+  };
+
+  const handleConfirmLinkDevice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLinkingDevice(true);
+    try {
+      const selectedPlayer = players.find(p => p.id === selectedAthleteIdForLink);
+      const athleteName = selectedPlayer ? selectedPlayer.name : 'Convidado / Torcedor';
+      const athleteWhatsapp = customWhatsappForLink || selectedPlayer?.whatsapp || '';
+
+      const result = await requestPermissionAndRegister({
+        playerId: selectedAthleteIdForLink || undefined,
+        playerName: athleteName,
+        whatsapp: athleteWhatsapp || undefined
+      });
+
+      setPushPermission(getNotificationPermissionStatus());
+      if (result.success) {
+        showToast(`Aparelho vinculado ao atleta ${athleteName}!`, 'success');
+        setIsLinkDeviceModalOpen(false);
+        loadPushData();
+      } else {
+        showToast(result.error || 'Erro ao vincular notificações.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Erro ao processar vínculo.', 'error');
+    } finally {
+      setIsLinkingDevice(false);
+    }
+  };
+
+  const handleActivatePush = async () => {
+    handleOpenLinkModal();
   };
 
   const loadGroups = async () => {
@@ -1029,17 +1068,18 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
       )}
 
       {/* SUB TABS NAVIGATION */}
-      <div className="flex bg-gray-200 dark:bg-surface-dark p-1.5 rounded-2xl w-full sm:w-auto self-start border border-gray-100 dark:border-gray-800 flex-nowrap overflow-x-auto gap-1 scrollbar-none">
+      <div className="flex bg-gray-200 dark:bg-surface-dark p-1.5 rounded-2xl w-full sm:w-auto self-start border border-gray-100 dark:border-gray-800 flex-nowrap overflow-x-auto gap-1 scrollbar-none items-center">
         <button
           onClick={() => setActiveSubTab('config')}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Configurações de Cobrança"
+          className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'config'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">payments</span>
-          Configurações de Cobrança
+          <span className="material-icons-outlined text-base">payments</span>
+          <span>Cobrança</span>
         </button>
 
         <button
@@ -1047,14 +1087,15 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
             setActiveSubTab('match_config');
             generateMatchPreview();
           }}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Configurações da Partida"
+          className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'match_config'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">sports_soccer</span>
-          Configurações da Partida
+          <span className="material-icons-outlined text-base">sports_soccer</span>
+          <span>Partida</span>
         </button>
 
         <button
@@ -1062,28 +1103,32 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
             setActiveSubTab('push_config');
             loadPushData();
           }}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Configurações de Notificação"
+          className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
             activeSubTab === 'push_config'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">notifications_active</span>
-          Configurações de Notificação
+          <span className="material-icons-outlined text-base">notifications_active</span>
+          <span>Notificação</span>
         </button>
+
+        <div className="h-4 w-px bg-gray-300 dark:bg-gray-700 mx-1 shrink-0" />
 
         <button
           onClick={() => {
             setActiveSubTab('render');
           }}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Automação 24/7 (Render)"
+          aria-label="Automação 24/7 (Render)"
+          className={`p-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shrink-0 ${
             activeSubTab === 'render'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">cloud_sync</span>
-          Automação 24/7 (Render)
+          <span className="material-icons-outlined text-lg">cloud_sync</span>
         </button>
 
         <button
@@ -1091,16 +1136,17 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
             setActiveSubTab('history');
             refreshHistoryAndLogs();
           }}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Histórico de Envios"
+          aria-label="Histórico de Envios"
+          className={`p-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shrink-0 relative ${
             activeSubTab === 'history'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">history</span>
-          Histórico
+          <span className="material-icons-outlined text-lg">history</span>
           {history.length > 0 && (
-            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-black">
+            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-black text-[10px] leading-none">
               {history.length}
             </span>
           )}
@@ -1111,14 +1157,15 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
             setActiveSubTab('logs');
             refreshHistoryAndLogs();
           }}
-          className={`flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0 ${
+          title="Diagnóstico e Logs do Sistema"
+          aria-label="Diagnóstico e Logs do Sistema"
+          className={`p-2 sm:px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shrink-0 ${
             activeSubTab === 'logs'
               ? 'bg-white dark:bg-gray-700 shadow text-primary font-black'
               : 'text-muted-light hover:text-primary'
           }`}
         >
-          <span className="material-icons-outlined text-sm">receipt_long</span>
-          Diagnóstico e Logs
+          <span className="material-icons-outlined text-lg">receipt_long</span>
         </button>
       </div>
 
@@ -2669,14 +2716,24 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-primary">Aparelhos Registrados</h4>
-                    <p className="text-[11px] text-muted-light mt-0.5">Lista de navegadores/PWAs ativos no Firebase Cloud Messaging.</p>
+                    <p className="text-[11px] text-muted-light mt-0.5">Atletas e dispositivos ativos para receber Notificações Push do PWA.</p>
                   </div>
-                  <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                    {pushDevices.length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleOpenLinkModal}
+                      className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider bg-primary/10 hover:bg-primary/20 text-primary transition-colors flex items-center gap-1"
+                      title="Vincular este aparelho ao seu Atleta"
+                    >
+                      <span className="material-icons-outlined text-xs">add_link</span>
+                      Vincular Meu Celular
+                    </button>
+                    <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                      {pushDevices.length}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
                   {loadingPush ? (
                     <div className="py-8 text-center text-xs text-muted-light">Carregando aparelhos...</div>
                   ) : pushDevices.length === 0 ? (
@@ -2685,30 +2742,81 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
                     </div>
                   ) : (
                     pushDevices.map((dev) => {
-                      // Try to parse device_info
+                      let parsedInfo: any = {};
                       let infoStr = 'Dispositivo PWA';
                       if (dev.device_info) {
                         try {
-                          const info = typeof dev.device_info === 'string' ? JSON.parse(dev.device_info) : dev.device_info;
-                          if (info.browser) {
-                            infoStr = `${info.browser} • ${info.os || 'Desconhecido'}`;
-                          } else if (info.name) {
-                            infoStr = info.name;
+                          parsedInfo = typeof dev.device_info === 'string' ? JSON.parse(dev.device_info) : dev.device_info;
+                          if (parsedInfo.browser) {
+                            infoStr = `${parsedInfo.browser} • ${parsedInfo.os || 'Dispositivo'}`;
+                          } else if (parsedInfo.name) {
+                            infoStr = parsedInfo.name;
+                          } else if (typeof dev.device_info === 'string') {
+                            infoStr = dev.device_info;
                           }
                         } catch (e) {
-                          infoStr = dev.device_info;
+                          infoStr = String(dev.device_info);
                         }
                       }
+
+                      // Encontrar dados do atleta
+                      const athleteName = dev.player_name || parsedInfo.playerName || 'Atleta / Membro do Grupo';
+                      const athletePhone = dev.whatsapp || parsedInfo.whatsapp || '';
+                      const playerId = dev.player_id || parsedInfo.playerId;
+                      const matchedPlayer = players.find(p => String(p.id) === String(playerId) || p.name.toLowerCase() === athleteName.toLowerCase());
+                      const cleanPhone = athletePhone.replace(/\D/g, '');
                       const dateStr = new Date(dev.updated_at || dev.created_at).toLocaleDateString('pt-BR');
+
                       return (
-                        <div key={dev.id} className="p-3 rounded-2xl bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 flex items-center justify-between gap-3 text-xs">
-                          <div className="min-w-0 flex-1">
-                            <h5 className="font-bold text-gray-800 dark:text-gray-200 truncate">{infoStr}</h5>
-                            <p className="text-[10px] text-muted-light mt-0.5">Vínculo: {dateStr}</p>
+                        <div key={dev.id} className="p-3.5 rounded-2xl bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-primary/10 border border-primary/20 flex-shrink-0 flex items-center justify-center">
+                              {matchedPlayer?.photoUrl ? (
+                                <img src={matchedPlayer.photoUrl} alt={athleteName} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="material-icons-outlined text-primary text-xl">sports_soccer</span>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h5 className="font-bold text-gray-900 dark:text-white truncate">
+                                  {athleteName}
+                                </h5>
+                                {matchedPlayer && (
+                                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                    #{matchedPlayer.jerseyNumber} • {matchedPlayer.position}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-muted-light mt-0.5 flex-wrap">
+                                <span className="flex items-center gap-0.5">
+                                  <span className="material-icons-outlined text-[10px]">devices</span>
+                                  {infoStr}
+                                </span>
+                                <span>•</span>
+                                <span>{dateStr}</span>
+                              </div>
+                            </div>
                           </div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500 border border-green-500/20">
-                            Ativo
-                          </span>
+
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                            {cleanPhone && (
+                              <a
+                                href={`https://wa.me/55${cleanPhone}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1.5 rounded-xl bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 font-bold text-[10px] flex items-center gap-1 transition-colors"
+                                title={`Conversar com ${athleteName} no WhatsApp`}
+                              >
+                                <span className="material-icons-outlined text-xs">chat</span>
+                                WhatsApp
+                              </a>
+                            )}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-green-500/10 text-green-500 border border-green-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                              Ativo
+                            </span>
+                          </div>
                         </div>
                       );
                     })
@@ -2717,6 +2825,95 @@ export const WhatsAppTab: React.FC<WhatsAppTabProps> = ({ players, selectedDate,
               </div>
             </div>
           </div>
+
+          {/* MODAL DE VINCULAR DISPOSITIVO COM SELEÇÃO DE ATLETA */}
+          {isLinkDeviceModalOpen && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in overflow-y-auto">
+              <div className="bg-surface-light dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] border border-gray-200 dark:border-gray-800 p-6 md:p-8 my-auto shadow-2xl relative space-y-6">
+                <button
+                  type="button"
+                  onClick={() => setIsLinkDeviceModalOpen(false)}
+                  className="absolute top-6 right-6 w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  <span className="material-icons-outlined text-sm">close</span>
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <span className="material-icons-outlined text-2xl text-primary">phonelink_ring</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Vincular Aparelho</h3>
+                    <p className="text-xs text-muted-light">Receba alertas e convocações direto no seu celular</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleConfirmLinkDevice} className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-primary mb-1.5 block">
+                      Selecione o Atleta / Jogador
+                    </label>
+                    <select
+                      value={selectedAthleteIdForLink}
+                      onChange={(e) => {
+                        setSelectedAthleteIdForLink(e.target.value);
+                        const player = players.find(p => p.id === e.target.value);
+                        if (player?.whatsapp) {
+                          setCustomWhatsappForLink(player.whatsapp);
+                        }
+                      }}
+                      className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-2xl p-4 text-xs font-bold shadow-inner"
+                    >
+                      <option value="">-- Selecione o Atleta ou Convidado --</option>
+                      {players.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          #{p.jerseyNumber} - {p.name} ({p.position})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-primary mb-1.5 block">
+                      WhatsApp do Atleta (com DDD)
+                    </label>
+                    <input
+                      type="tel"
+                      value={customWhatsappForLink}
+                      onChange={(e) => setCustomWhatsappForLink(e.target.value)}
+                      placeholder="Ex: 11999998888"
+                      className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-2xl p-4 text-xs font-bold shadow-inner"
+                    />
+                    <p className="text-[10px] text-muted-light mt-1">
+                      Este número é sincronizado com a central de notificações do Pesadão.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-primary/5 border border-primary/10 flex items-start gap-2.5 text-xs text-muted-light">
+                    <span className="material-icons-outlined text-primary text-base">notifications_active</span>
+                    <p className="text-[11px] leading-relaxed">
+                      Ao ativar, seu aparelho será registrado no Firebase Cloud Messaging e passará a receber os alertas automáticos das partidas e novidades do clube.
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLinkingDevice}
+                    className="w-full bg-primary hover:bg-primary-hover text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isLinkingDevice ? (
+                      <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-5 h-5"></span>
+                    ) : (
+                      <>
+                        <span className="material-icons-outlined text-base">check_circle</span>
+                        Ativar & Registrar Meu Aparelho
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

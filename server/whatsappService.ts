@@ -51,7 +51,7 @@ class WhatsAppService {
   private lastError: string | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private cronJob: cron.ScheduledTask | null = null;
+  private cronJob: any = null;
   private isConnecting = false;
   private reconnectInProgress = false;
   private pairingInProgress = false;
@@ -561,8 +561,7 @@ class WhatsAppService {
               data: groupsList,
               updated_at: new Date().toISOString(),
             })
-            .then(() => {})
-            .catch(() => {});
+            .then(() => {}, () => {});
         }
 
         return groupsList;

@@ -10,7 +10,8 @@ export interface Player {
   status: 'active' | 'injured';
   paymentHistory: Record<string, string>; // Stores { "MM-YYYY": "DD/MM/YYYY" }
   
-  // Novos campos de Estatísticas
+  // Novos campos de Estatísticas e Contato
+  whatsapp?: string; // Telefone WhatsApp do atleta (ex: 11999999999)
   position: string;
   goals: number;
   matchesPlayed: number;
@@ -29,6 +30,7 @@ export interface DbPlayer {
   status: string;
   
   // Colunas DB
+  whatsapp?: string;
   position?: string;
   goals?: number;
   matches_played?: number;
@@ -113,6 +115,15 @@ export interface WhatsAppConfig {
   matchMessageTemplate?: string;
   matchAutoSend?: boolean;
 
+  // Provedores externos opcionais
+  provider?: 'baileys' | 'zapi' | 'evolution';
+  zapiInstanceId?: string;
+  zapiToken?: string;
+  zapiClientToken?: string;
+  evolutionApiUrl?: string;
+  evolutionApiKey?: string;
+  evolutionInstance?: string;
+
   updatedAt?: string;
 }
 
@@ -142,4 +153,23 @@ export interface WhatsAppSessionInfo {
   qrCode?: string | null;
   error?: string | null;
   lastConnected?: string | null;
+}
+
+export type UserRole = 'admin' | 'player';
+
+export interface AuthUser {
+  username: 'jogador' | 'admin';
+  role: UserRole;
+  displayName: string;
+}
+
+export interface PushSubscriptionDevice {
+  id: string | number;
+  fcm_token: string;
+  device_info?: string;
+  player_id?: string | number | null;
+  player_name?: string | null;
+  whatsapp?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }

@@ -22,7 +22,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
@@ -269,7 +269,7 @@ async function startServer() {
   // Registrar ou atualizar token FCM
   app.post('/api/push/subscribe', async (req, res) => {
     try {
-      const { fcmToken, deviceInfo } = req.body;
+      const { fcmToken, deviceInfo, playerId, playerName, whatsapp } = req.body;
       if (!fcmToken) {
         res.status(400).json({ error: 'Token FCM obrigatório.' });
         return;
@@ -281,18 +281,47 @@ async function startServer() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('push_subscriptions')
-        .upsert(
-          {
-            fcm_token: fcmToken,
-            device_info: deviceInfo || '',
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: 'fcm_token' }
-        );
+      // Montamos o payload estruturado com fallback seguro caso as colunas ainda estejam sendo criadas
+      const payload: any = {
+        fcm_token: fcmToken,
+        device_info: typeof deviceInfo === 'object' ? JSON.stringify(deviceInfo) : deviceInfo || '',
+        updated_at: new Date().toISOString()
+      };
 
-      if (error) throw error;
+      if (playerId !== undefined) payload.player_id = playerId;
+      if (playerName !== undefined) payload.player_name = playerName;
+      if (whatsapp !== undefined) payload.whatsapp = whatsapp;
+
+      // Se deviceInfo não contiver o json com dados do atleta, enriquecemos para garantir redundância
+      try {
+        let parsed = typeof deviceInfo === 'string' && deviceInfo.startsWith('{') ? JSON.parse(deviceInfo) : { raw: deviceInfo };
+        parsed.playerName = playerName || parsed.playerName;
+        parsed.whatsapp = whatsapp || parsed.whatsapp;
+        parsed.playerId = playerId || parsed.playerId;
+        payload.device_info = JSON.stringify(parsed);
+      } catch (e) {}
+
+      // Tenta upsert com todos os campos
+      let { data, error } = await supabase
+        .from('push_subscriptions')
+        .upsert(payload, { onConflict: 'fcm_token' });
+
+      // Se der erro por coluna não existente no Supabase, tenta o upsert mínimo sem quebrar
+      if (error && error.message && error.message.includes('column')) {
+        console.warn('[API Push] Colunas extras ainda não criadas no Supabase. Usando fallback no device_info:', error.message);
+        const fallbackPayload = {
+          fcm_token: fcmToken,
+          device_info: payload.device_info,
+          updated_at: new Date().toISOString()
+        };
+        const fallbackRes = await supabase
+          .from('push_subscriptions')
+          .upsert(fallbackPayload, { onConflict: 'fcm_token' });
+        if (fallbackRes.error) throw fallbackRes.error;
+      } else if (error) {
+        throw error;
+      }
+
       res.json({ success: true, message: 'Dispositivo registrado com sucesso.' });
     } catch (err: any) {
       console.error('[API Push] Erro ao salvar token:', err);

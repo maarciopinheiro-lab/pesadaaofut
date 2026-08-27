@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, ChangeEvent } from 'react';
-import { Player, DbPlayer, Match, DbMatch } from './types';
+import { Player, DbPlayer, Match, DbMatch, UserRole, AuthUser } from './types';
 import { getSupabase, saveSupabaseKey, SUPABASE_URL } from './supabaseClient';
 import { WhatsAppTab } from './WhatsAppTab';
 import { previewMatchWhatsAppMessage, sendMatchWhatsAppReport, getWhatsAppConfig } from './whatsappClient';
+import { requestPermissionAndRegister, getNotificationPermissionStatus, syncTokenOnStartup } from './pushNotificationClient';
 
 const DEFAULT_FEE = 40;
 const TEAM_LOGO_URL = 'https://i.imgur.com/GSj0ZPy.png'; // Ícone transparente (Interno)
@@ -67,9 +68,40 @@ const App: React.FC = () => {
   };
 
   // --- STATE ---
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [currentTab, setCurrentTab] = useState<'financial' | 'matches' | 'stats' | 'whatsapp'>('matches'); 
   
+  // --- ROLE / AUTH STATE (2 Logins: jogador / pesadao | admin / admpesadao) ---
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    try {
+      const saved = localStorage.getItem('pesadao_auth_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.username === 'jogador' || parsed.username === 'admin')) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const userRole: UserRole = currentUser ? currentUser.role : 'player';
+
+  // Login inputs state (para tela de login e modals)
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+
+  // --- AUTO PWA REGISTRATION PROMPT ---
+  const [showAutoPwaPrompt, setShowAutoPwaPrompt] = useState(false);
+  const [autoPwaAthleteId, setAutoPwaAthleteId] = useState('');
+  const [autoPwaWhatsapp, setAutoPwaWhatsapp] = useState('');
+  const [isRegisteringAutoPwa, setIsRegisteringAutoPwa] = useState(false);
+
   const [players, setPlayers] = useState<Player[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,6 +121,7 @@ const App: React.FC = () => {
   const [editPlayerPosition, setEditPlayerPosition] = useState('');
   const [editPlayerPhoto, setEditPlayerPhoto] = useState<string | null>(null);
   const [editPlayerValue, setEditPlayerValue] = useState<string>('');
+  const [editPlayerWhatsapp, setEditPlayerWhatsapp] = useState<string>('');
 
   const [isMatchResultModalOpen, setIsMatchResultModalOpen] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
@@ -155,6 +188,7 @@ const App: React.FC = () => {
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [newPlayerPhoto, setNewPlayerPhoto] = useState<string | null>(null);
   const [newPlayerPosition, setNewPlayerPosition] = useState('MEI');
+  const [newPlayerWhatsapp, setNewPlayerWhatsapp] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [newMatchOpponent, setNewMatchOpponent] = useState('');
@@ -195,9 +229,8 @@ const App: React.FC = () => {
 
   // --- INITIALIZATION ---
   useEffect(() => {
-    if (theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [theme]);
+    document.documentElement.classList.add('dark');
+  }, []);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -222,6 +255,140 @@ const App: React.FC = () => {
       supabase.removeChannel(channelMatches);
     };
   }, []);
+
+  // Redirecionar jogador se tentar acessar abas de administração
+  useEffect(() => {
+    if (userRole === 'player' && (currentTab === 'financial' || currentTab === 'whatsapp')) {
+      setCurrentTab('matches');
+    }
+  }, [userRole, currentTab]);
+
+  // Verificar se precisa exibir o banner de vincular aparelho PWA automaticamente ao abrir o app
+  useEffect(() => {
+    const isDeviceLinked = localStorage.getItem('pwa_device_linked') === 'true';
+    const isDismissed = sessionStorage.getItem('pwa_prompt_dismissed') === 'true';
+    const perm = getNotificationPermissionStatus();
+
+    if (!isDeviceLinked && !isDismissed && perm !== 'denied') {
+      const timer = setTimeout(() => {
+        setShowAutoPwaPrompt(true);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const handlePerformLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    const userClean = loginUsername.trim().toLowerCase();
+    const passClean = loginPassword.trim();
+
+    // 1 USUÁRIO PARA JOGADOR: LOGIN: jogador | SENHA: pesadao
+    if (userClean === 'jogador' && passClean === 'pesadao') {
+      const authData: AuthUser = {
+        username: 'jogador',
+        role: 'player',
+        displayName: 'Atleta / Jogador',
+      };
+      setCurrentUser(authData);
+      localStorage.setItem('pesadao_auth_user', JSON.stringify(authData));
+      localStorage.setItem('pesadao_user_role', 'player');
+      setLoginUsername('');
+      setLoginPassword('');
+      setLoginError('');
+    } 
+    // 1 USUÁRIO PARA ADM: LOGIN: admin | SENHA: admpesadao
+    else if (userClean === 'admin' && (passClean === 'admpesadao' || passClean === 'pesadao2025' || passClean === 'admin')) {
+      const authData: AuthUser = {
+        username: 'admin',
+        role: 'admin',
+        displayName: 'Diretoria / Admin',
+      };
+      setCurrentUser(authData);
+      localStorage.setItem('pesadao_auth_user', JSON.stringify(authData));
+      localStorage.setItem('pesadao_user_role', 'admin');
+      setLoginUsername('');
+      setLoginPassword('');
+      setLoginError('');
+    } else {
+      setLoginError("Usuário ou senha incorretos. Verifique suas credenciais.");
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminLoginError('');
+    const cleanPass = adminPasswordInput.trim();
+    // Senha de administrador (padrão 'admpesadao', 'pesadao2025' ou 'admin')
+    if (cleanPass === 'admpesadao' || cleanPass === 'pesadao2025' || cleanPass === 'admin') {
+      const authData: AuthUser = {
+        username: 'admin',
+        role: 'admin',
+        displayName: 'Diretoria / Admin',
+      };
+      setCurrentUser(authData);
+      localStorage.setItem('pesadao_auth_user', JSON.stringify(authData));
+      localStorage.setItem('pesadao_user_role', 'admin');
+      setIsAdminLoginModalOpen(false);
+      setAdminPasswordInput('');
+      setAdminLoginError('');
+    } else {
+      setAdminLoginError('Senha incorreta. Tente novamente.');
+    }
+  };
+
+  const handleSwitchToPlayer = () => {
+    const authData: AuthUser = {
+      username: 'jogador',
+      role: 'player',
+      displayName: 'Atleta / Jogador',
+    };
+    setCurrentUser(authData);
+    localStorage.setItem('pesadao_auth_user', JSON.stringify(authData));
+    localStorage.setItem('pesadao_user_role', 'player');
+    if (currentTab === 'financial' || currentTab === 'whatsapp') {
+      setCurrentTab('matches');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('pesadao_auth_user');
+    localStorage.setItem('pesadao_user_role', 'player');
+    setCurrentTab('matches');
+  };
+
+  const handleAutoPwaRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsRegisteringAutoPwa(true);
+    try {
+      const player = players.find(p => p.id === autoPwaAthleteId);
+      const athleteName = player ? player.name : 'Atleta do Pesadão';
+      const athletePhone = player?.whatsapp || '';
+
+      const result = await requestPermissionAndRegister({
+        playerId: autoPwaAthleteId || undefined,
+        playerName: athleteName,
+        whatsapp: athletePhone || undefined
+      });
+
+      if (result.success) {
+        localStorage.setItem('pwa_device_linked', 'true');
+        setShowAutoPwaPrompt(false);
+      } else {
+        alert(result.error || 'Erro ao registrar notificações.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao registrar dispositivo.');
+    } finally {
+      setIsRegisteringAutoPwa(false);
+    }
+  };
+
+  const dismissAutoPwaPrompt = () => {
+    sessionStorage.setItem('pwa_prompt_dismissed', 'true');
+    setShowAutoPwaPrompt(false);
+  };
 
   const fetchData = async () => {
     const supabase = getSupabase();
@@ -248,7 +415,8 @@ const App: React.FC = () => {
             goals: p.goals || 0,
             matchesPlayed: p.matches_played || 0,
             lastPlayedDate: p.last_played_date,
-            overall: p.overall || 75
+            overall: p.overall || 75,
+            whatsapp: p.whatsapp || ''
           };
         }));
       }
@@ -293,7 +461,6 @@ const App: React.FC = () => {
     return `${m}-${y}`;
   };
 
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   const changeMonth = (increment: number) => {
     const newDate = new Date(selectedDate);
     newDate.setMonth(newDate.getMonth() + increment);
@@ -464,6 +631,7 @@ const App: React.FC = () => {
       setEditPlayerPosition(player.position);
       setEditPlayerPhoto(player.photoUrl);
       setEditPlayerValue(player.value.toString());
+      setEditPlayerWhatsapp(player.whatsapp || '');
       setIsEditPlayerModalOpen(true);
   };
 
@@ -473,14 +641,24 @@ const App: React.FC = () => {
       setIsSubmitting(true);
       const supabase = getSupabase();
       if (supabase) {
-          const { error } = await supabase.from('players').update({ 
+          const updatePayload: any = { 
             name: editPlayerName, 
             jersey_number: parseInt(editPlayerNumber) || 0, 
             position: editPlayerPosition, 
             photo_url: editPlayerPhoto,
-            value: parseFloat(editPlayerValue) || DEFAULT_FEE
-          }).eq('id', editingPlayer.id);
+            value: parseFloat(editPlayerValue) || DEFAULT_FEE,
+            whatsapp: editPlayerWhatsapp || null
+          };
+
+          let { error } = await supabase.from('players').update(updatePayload).eq('id', editingPlayer.id);
           
+          // Se falhar por coluna não existente no supabase, tenta sem whatsapp
+          if (error && error.message?.includes('whatsapp')) {
+            delete updatePayload.whatsapp;
+            const res = await supabase.from('players').update(updatePayload).eq('id', editingPlayer.id);
+            error = res.error;
+          }
+
           if (!error) {
               setPlayers(prev => prev.map(p => p.id === editingPlayer.id ? { 
                 ...p, 
@@ -488,9 +666,12 @@ const App: React.FC = () => {
                 jerseyNumber: parseInt(editPlayerNumber) || 0, 
                 position: editPlayerPosition, 
                 photoUrl: editPlayerPhoto || p.photoUrl,
-                value: parseFloat(editPlayerValue) || DEFAULT_FEE
+                value: parseFloat(editPlayerValue) || DEFAULT_FEE,
+                whatsapp: editPlayerWhatsapp || p.whatsapp
               } : p));
               setIsEditPlayerModalOpen(false);
+          } else {
+            alert(`Erro ao atualizar atleta: ${error.message}`);
           }
       }
       setIsSubmitting(false);
@@ -515,7 +696,7 @@ const App: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const fullPayload = { 
+      const fullPayload: any = { 
         name: newPlayerName, 
         photo_url: newPlayerPhoto || 'https://via.placeholder.com/150', 
         is_paid: false, 
@@ -526,11 +707,18 @@ const App: React.FC = () => {
         position: newPlayerPosition || 'MEI', 
         goals: 0, 
         matches_played: 0, 
-        overall: 70 
+        overall: 70,
+        whatsapp: newPlayerWhatsapp || null
       };
 
-      const { error } = await supabase.from('players').insert([fullPayload]);
+      let { error } = await supabase.from('players').insert([fullPayload]);
       
+      if (error && error.message?.includes('whatsapp')) {
+        delete fullPayload.whatsapp;
+        const res = await supabase.from('players').insert([fullPayload]);
+        error = res.error;
+      }
+
       if (error) {
         console.error("Erro Supabase:", error);
         alert(`Erro ao salvar no banco: ${error.message}`);
@@ -542,6 +730,7 @@ const App: React.FC = () => {
         setNewPlayerNumber(''); 
         setNewPlayerPhoto(null);
         setNewPlayerPosition('MEI');
+        setNewPlayerWhatsapp('');
         setIsAddModalOpen(false);
       }
     } catch (err: any) {
@@ -1034,6 +1223,32 @@ const App: React.FC = () => {
 
     return (
     <div className="space-y-8 animation-fade-in pb-20">
+        {userRole === 'player' && (
+          <div className="bg-gradient-to-r from-green-600/10 via-primary/10 to-green-500/10 border border-green-500/30 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-fade-in">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-green-500/20 text-green-500 flex items-center justify-center shrink-0 shadow-inner">
+                <span className="material-icons-outlined text-2xl animate-bounce">notifications_active</span>
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-tight text-gray-900 dark:text-white flex items-center gap-1.5">
+                  <span>Bora fio, ativa as Notificações!</span>
+                  <span className="text-xs">🔔</span>
+                </h4>
+                <p className="text-xs text-muted-light mt-0.5">
+                  Receba avisos de lembrete do jogo, horario e uniforme no seu celular!
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAutoPwaPrompt(true)}
+              className="w-full sm:w-auto px-5 py-3 bg-green-600 hover:bg-green-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-green-600/20 transition-all flex items-center justify-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <span className="material-icons-outlined text-base">notifications_active</span>
+              Ativar Notificações
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
              <div className="bg-surface-light dark:bg-surface-dark rounded-2xl p-6 border border-gray-200 dark:border-gray-800 flex items-center justify-between">
                   <div><h3 className="text-muted-light font-bold text-sm uppercase">Aproveitamento</h3><p className="text-4xl font-bold mt-2">{matchStats.winRate}%</p></div>
@@ -1116,13 +1331,17 @@ const App: React.FC = () => {
                       <input type="text" placeholder="Buscar..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white dark:bg-black/20 border border-gray-200 dark:border-gray-700 rounded-full px-4 py-2 text-sm font-bold pl-10" />
                       <span className="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-muted-light text-sm">search</span>
                     </div>
-                    <button onClick={() => {setAddMode('match'); setIsAddModalOpen(true);}} className="flex items-center justify-center gap-2 bg-primary text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 whitespace-nowrap"><span className="material-icons-outlined text-lg">add</span> Nova Partida</button>
+                    {userRole === 'admin' && (
+                      <button onClick={() => {setAddMode('match'); setIsAddModalOpen(true);}} className="flex items-center justify-center gap-2 bg-primary text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 whitespace-nowrap"><span className="material-icons-outlined text-lg">add</span> Nova Partida</button>
+                    )}
                 </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filtered.map(m => (
                     <div key={m.id} className={`relative rounded-2xl overflow-hidden flex flex-col transition-all duration-300 ${matchViewMode === 'upcoming' ? 'bg-gradient-to-br from-primary to-[#f9abd8] text-black' : 'bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-800 shadow-sm'}`}>
-                        <div className="absolute top-3 right-3 z-30"><button onClick={(e) => deleteMatch(m.id, e)} className={`p-2 rounded-full hover:bg-black/10 ${matchViewMode === 'upcoming' ? 'text-black' : 'text-muted-light'}`}><span className="material-icons-outlined text-lg">delete_outline</span></button></div>
+                        {userRole === 'admin' && (
+                          <div className="absolute top-3 right-3 z-30"><button onClick={(e) => deleteMatch(m.id, e)} className={`p-2 rounded-full hover:bg-black/10 ${matchViewMode === 'upcoming' ? 'text-black' : 'text-muted-light'}`}><span className="material-icons-outlined text-lg">delete_outline</span></button></div>
+                        )}
                         <div className="p-6 pt-10 flex items-center justify-between">
                              <div className="flex flex-col items-center gap-2 w-1/3"><img src={TEAM_LOGO_URL} className="w-10 h-10 object-contain" /><span className="font-bold text-xs truncate">Pesadão</span></div>
                              <div className="flex flex-col items-center justify-center w-1/3">
@@ -1132,18 +1351,32 @@ const App: React.FC = () => {
                              <div className="flex flex-col items-center gap-2 w-1/3 text-center"><div className="w-10 h-10 rounded-full flex items-center justify-center bg-white/10 overflow-hidden">{m.locationImg ? <img src={m.locationImg} className="w-full h-full object-cover" /> : <span className="material-icons-outlined">sports_soccer</span>}</div><span className="font-bold text-xs truncate w-full">{m.opponent}</span></div>
                         </div>
                         <div className={`p-3 border-t flex items-center gap-2 justify-center ${matchViewMode === 'upcoming' ? 'border-black/10 bg-black/5' : 'border-gray-100 dark:border-gray-800'}`}>
-                             <button onClick={() => openMatchResultModal(m)} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${matchViewMode === 'upcoming' ? 'bg-black/10 text-black' : 'bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 hover:bg-primary hover:text-white'}`}>
-                                 <span className="material-icons-outlined text-[14px]">{m.isFinished ? "edit" : "sports_score"}</span> {m.isFinished ? "Relatório" : "Informar Placar"}
-                             </button>
-                             {m.isFinished && (
-                               <button 
-                                 onClick={(e) => { e.stopPropagation(); openMatchShareModal(m); }}
-                                 title="Compartilhar no WhatsApp"
-                                 className="px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-1.5 transition-all bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/20"
-                               >
-                                 <span className="material-icons-outlined text-[14px]">share</span>
-                                 Zap
-                               </button>
+                             {userRole === 'admin' ? (
+                               <>
+                                 <button onClick={() => openMatchResultModal(m)} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${matchViewMode === 'upcoming' ? 'bg-black/10 text-black hover:bg-black/20' : 'bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 hover:bg-primary hover:text-white'}`}>
+                                     <span className="material-icons-outlined text-[14px]">{m.isFinished ? "edit" : "sports_score"}</span> {m.isFinished ? "Editar Relatório" : "Informar Placar"}
+                                 </button>
+                                 {m.isFinished && (
+                                   <button 
+                                     onClick={(e) => { e.stopPropagation(); openMatchShareModal(m); }}
+                                     title="Compartilhar no WhatsApp"
+                                     className="px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-1.5 transition-all bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/20"
+                                   >
+                                     <span className="material-icons-outlined text-[14px]">share</span>
+                                     Zap
+                                   </button>
+                                 )}
+                               </>
+                             ) : (
+                               m.isFinished ? (
+                                 <button onClick={() => openMatchResultModal(m)} className={`flex-1 py-2.5 rounded-lg text-xs font-bold uppercase flex items-center justify-center gap-2 transition-all ${matchViewMode === 'upcoming' ? 'bg-black/10 text-black' : 'bg-white dark:bg-surface-dark border border-gray-200 dark:border-gray-700 hover:bg-primary hover:text-white'}`}>
+                                     <span className="material-icons-outlined text-[14px]">visibility</span> Ver Súmula do Jogo
+                                 </button>
+                               ) : (
+                                 <div className="py-2 text-[11px] font-bold uppercase tracking-wider text-center opacity-70">
+                                   ⚽ Partida Confirmada
+                                 </div>
+                               )
                              )}
                         </div>
                     </div>
@@ -1245,34 +1478,172 @@ const App: React.FC = () => {
     );
   };
 
+  const renderLoginScreen = () => {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-display">
+        {/* Efeitos de Fundo */}
+        <div className="absolute -top-32 -left-32 w-80 h-80 bg-primary/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-[#f9abd8]/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="w-full max-w-md bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-800 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl relative z-10 space-y-6 animate-fade-in">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-20 h-20 rounded-3xl bg-primary/10 border border-primary/20 p-2 flex items-center justify-center mb-4 shadow-lg shadow-primary/10">
+              <img src={TEAM_LOGO_URL} alt="Pesadão F.C." className="w-full h-full object-contain" />
+            </div>
+            <h2 className="text-2xl font-black uppercase tracking-tight">Pesadão F.C.</h2>
+            <p className="text-xs text-muted-light mt-1">Informe seu login e senha para acessar o painel</p>
+          </div>
+
+          {loginError && (
+            <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold flex items-center gap-2">
+              <span className="material-icons-outlined text-base shrink-0">error_outline</span>
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handlePerformLogin} className="space-y-4">
+            <div>
+              <label className="text-[10px] font-black uppercase text-primary mb-1.5 block tracking-widest">
+                Usuário / Login
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={loginUsername}
+                  onChange={(e) => {
+                    setLoginUsername(e.target.value);
+                    setLoginError('');
+                  }}
+                  placeholder="Digite seu usuário"
+                  className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-800 rounded-2xl p-4 pl-11 text-sm font-bold shadow-inner outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+                <span className="material-icons-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-light text-lg">
+                  person
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase text-primary mb-1.5 block tracking-widest">
+                Senha de Acesso
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={loginPassword}
+                  onChange={(e) => {
+                    setLoginPassword(e.target.value);
+                    setLoginError('');
+                  }}
+                  placeholder="Digite sua senha"
+                  className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-800 rounded-2xl p-4 pl-11 pr-11 text-sm font-bold shadow-inner outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+                <span className="material-icons-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-light text-lg">
+                  lock
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-light hover:text-gray-900 dark:hover:text-white transition-colors"
+                >
+                  <span className="material-icons-outlined text-lg">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-4 bg-primary hover:bg-primary-hover text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/25 active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"
+            >
+              <span className="material-icons-outlined text-base">login</span>
+              Acessar
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Se não estiver logado, exibe a tela de login
+  if (!currentUser) {
+    return renderLoginScreen();
+  }
+
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark text-gray-900 dark:text-gray-100 font-display p-4 md:p-8 transition-colors duration-300 pb-24 md:pb-8">
         <div className="max-w-7xl mx-auto flex flex-row items-center justify-between mb-4 md:mb-8 sticky top-0 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur z-40 py-4">
-             <div className="flex items-center gap-3"><img src={TEAM_LOGO_URL} className="w-10 h-10 md:w-12 md:h-12 object-contain" /><h1 className="text-lg md:text-xl font-bold tracking-tight">Pesadão F.C<span className="text-primary">.</span></h1></div>
+             <div className="flex items-center gap-3">
+               <img src={TEAM_LOGO_URL} className="w-10 h-10 md:w-12 md:h-12 object-contain" />
+               <div>
+                 <h1 className="text-lg md:text-xl font-bold tracking-tight">Pesadão F.C<span className="text-primary">.</span></h1>
+                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted-light block">
+                   {userRole === 'admin' ? 'Acesso 🛡️ Diretoria' : 'Acesso ⚽ Jogador'}
+                 </span>
+               </div>
+             </div>
+             
+             {/* Navegação Desktop */}
              <nav className="hidden md:flex bg-gray-200 dark:bg-surface-dark p-1.5 rounded-full">
-                 <button onClick={() => setCurrentTab('financial')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${currentTab === 'financial' ? 'bg-white dark:bg-gray-700 shadow text-primary' : 'text-muted-light'}`}>Financeiro</button>
+                 {userRole === 'admin' && (
+                   <button onClick={() => setCurrentTab('financial')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${currentTab === 'financial' ? 'bg-white dark:bg-gray-700 shadow text-primary' : 'text-muted-light'}`}>Financeiro</button>
+                 )}
                  <button onClick={() => setCurrentTab('matches')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${currentTab === 'matches' ? 'bg-white dark:bg-gray-700 shadow text-primary' : 'text-muted-light'}`}>Jogos</button>
                  <button onClick={() => setCurrentTab('stats')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${currentTab === 'stats' ? 'bg-white dark:bg-gray-700 shadow text-primary' : 'text-muted-light'}`}>Jogadores</button>
-                 <button onClick={() => setCurrentTab('whatsapp')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${currentTab === 'whatsapp' ? 'bg-white dark:bg-gray-700 shadow text-primary font-black' : 'text-muted-light'}`}>
-                   <span className="material-icons-outlined text-sm text-green-500">chat</span>
-                   BOT
-                 </button>
+                 {userRole === 'admin' && (
+                   <button onClick={() => setCurrentTab('whatsapp')} className={`px-4 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-1.5 ${currentTab === 'whatsapp' ? 'bg-white dark:bg-gray-700 shadow text-primary font-black' : 'text-muted-light'}`}>
+                     <span className="material-icons-outlined text-sm text-green-500">chat</span>
+                     BOT
+                   </button>
+                 )}
              </nav>
-             <button onClick={toggleTheme} className="w-10 h-10 rounded-full bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:text-primary transition-colors"><span className="material-icons-outlined">{theme === 'dark' ? 'light_mode' : 'dark_mode'}</span></button>
+
+             <div className="flex items-center gap-2">
+               {/* Alternar Perfil ou Fazer Logout */}
+               {userRole === 'admin' && (
+                 <button 
+                   onClick={handleSwitchToPlayer} 
+                   title="Alternar para modo Atleta/Jogador"
+                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30 text-xs font-bold transition-all"
+                 >
+                   <span className="material-icons-outlined text-sm">admin_panel_settings</span>
+                   <span className="hidden sm:inline">Admin</span>
+                 </button>
+               )}
+
+               {/* Botão Sair */}
+               <button
+                 onClick={handleLogout}
+                 title="Sair / Trocar de Usuário"
+                 className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 text-xs font-bold transition-all"
+               >
+                 <span className="material-icons-outlined text-sm">logout</span>
+                 <span className="hidden sm:inline">Sair</span>
+               </button>
+             </div>
         </div>
 
         <main className="max-w-7xl mx-auto">
-             {currentTab === 'financial' && renderFinancial()}
+             {currentTab === 'financial' && userRole === 'admin' && renderFinancial()}
              {currentTab === 'matches' && renderMatches()}
              {currentTab === 'stats' && renderStats()}
-             {currentTab === 'whatsapp' && <WhatsAppTab players={players} selectedDate={selectedDate} matches={matches} />}
+             {currentTab === 'whatsapp' && userRole === 'admin' && <WhatsAppTab players={players} selectedDate={selectedDate} matches={matches} />}
         </main>
 
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface-light/90 dark:bg-surface-dark/90 backdrop-blur-xl border-t border-gray-200 dark:border-gray-800 p-2 z-50 flex justify-around items-center safe-area-bottom pb-4 shadow-lg">
-             <button onClick={() => setCurrentTab('financial')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'financial' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl">attach_money</span><span className="text-[10px] font-bold uppercase">Financeiro</span></button>
+             {userRole === 'admin' && (
+               <button onClick={() => setCurrentTab('financial')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'financial' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl">attach_money</span><span className="text-[10px] font-bold uppercase">Financeiro</span></button>
+             )}
              <button onClick={() => setCurrentTab('matches')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'matches' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl">sports_soccer</span><span className="text-[10px] font-bold uppercase">Jogos</span></button>
              <button onClick={() => setCurrentTab('stats')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'stats' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl">groups</span><span className="text-[10px] font-bold uppercase">Jogadores</span></button>
-             <button onClick={() => setCurrentTab('whatsapp')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'whatsapp' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl text-green-500">chat</span><span className="text-[10px] font-bold uppercase">BOT</span></button>
+             {userRole === 'admin' && (
+               <button onClick={() => setCurrentTab('whatsapp')} className={`flex flex-col items-center justify-center w-full p-2 rounded-lg ${currentTab === 'whatsapp' ? 'text-primary font-black' : 'text-muted-light'}`}><span className="material-icons-outlined mb-1 text-2xl text-green-500">chat</span><span className="text-[10px] font-bold uppercase">BOT</span></button>
+             )}
+             <button onClick={handleLogout} className="flex flex-col items-center justify-center w-full p-2 rounded-lg text-red-400 hover:text-red-500"><span className="material-icons-outlined mb-1 text-2xl">logout</span><span className="text-[10px] font-bold uppercase">Sair</span></button>
         </nav>
 
         {/* MODAL RANKING COMPLETO */}
@@ -1315,7 +1686,20 @@ const App: React.FC = () => {
                 </div>
                 <div className="text-center">
                   <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-1">{selectedPlayerForDetail.name}</h3>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-primary">{selectedPlayerForDetail.position}</span>
+                  <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-primary">{selectedPlayerForDetail.position}</span>
+                    {selectedPlayerForDetail.whatsapp && (
+                      <a 
+                        href={`https://wa.me/55${selectedPlayerForDetail.whatsapp.replace(/\D/g, '')}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 text-[10px] font-bold border border-green-500/20 hover:bg-green-500/20 transition-all"
+                      >
+                        <span className="material-icons-outlined text-xs">chat</span>
+                        {selectedPlayerForDetail.whatsapp}
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 w-full mt-6">
                   <div className="bg-white dark:bg-black/20 p-3 rounded-2xl text-center border border-black/5">
@@ -1412,8 +1796,20 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-6 md:p-8 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-black/20">
-                <button onClick={() => setIsPlayerDetailModalOpen(false)} className="w-full py-4 bg-white dark:bg-gray-800 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-black/5 shadow-sm active:scale-95 transition-all">Fechar Perfil</button>
+              <div className="p-6 md:p-8 border-t border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-black/20 flex gap-3">
+                {userRole === 'admin' && (
+                  <button 
+                    onClick={(e) => {
+                      setIsPlayerDetailModalOpen(false);
+                      openEditPlayerModal(selectedPlayerForDetail, e);
+                    }} 
+                    className="flex-1 py-4 bg-primary text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span className="material-icons-outlined text-sm">edit</span>
+                    Editar Atleta
+                  </button>
+                )}
+                <button onClick={() => setIsPlayerDetailModalOpen(false)} className="flex-1 py-4 bg-white dark:bg-gray-800 rounded-2xl text-[10px] font-bold uppercase tracking-widest border border-black/5 shadow-sm active:scale-95 transition-all">Fechar Perfil</button>
               </div>
             </div>
           </div>
@@ -1599,18 +1995,29 @@ const App: React.FC = () => {
               </div>
 
               <div className="p-5 md:p-6 border-t border-gray-100 dark:border-gray-800 flex gap-3 flex-shrink-0">
-                <button onClick={() => setIsMatchResultModalOpen(false)} className="flex-1 py-3 text-xs font-bold uppercase opacity-40 tracking-tight">Cancelar</button>
-                <button 
-                    onClick={confirmMatchResult} 
-                    disabled={isSubmitting} 
-                    className="flex-[2] py-4 bg-primary text-white font-bold text-xs uppercase rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                    {isSubmitting ? (
-                        <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-4 h-4"></span>
-                    ) : (
-                        "Salvar Relatório Final"
-                    )}
-                </button>
+                {userRole === 'admin' ? (
+                  <>
+                    <button onClick={() => setIsMatchResultModalOpen(false)} className="flex-1 py-3 text-xs font-bold uppercase opacity-40 tracking-tight">Cancelar</button>
+                    <button 
+                        onClick={confirmMatchResult} 
+                        disabled={isSubmitting} 
+                        className="flex-[2] py-4 bg-primary text-white font-bold text-xs uppercase rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? (
+                            <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-4 h-4"></span>
+                        ) : (
+                            "Salvar Relatório Final"
+                        )}
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => setIsMatchResultModalOpen(false)} 
+                    className="w-full py-4 bg-primary text-white font-bold text-xs uppercase rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all"
+                  >
+                    Fechar Súmula
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1633,6 +2040,19 @@ const App: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black uppercase text-primary mb-2 block tracking-widest">Nome Completo</label>
                     <input type="text" required value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-[1.25rem] p-4 text-sm font-bold shadow-inner" placeholder="Ex: João Silva" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-primary mb-2 block tracking-widest">WhatsApp (com DDD)</label>
+                    <div className="relative">
+                      <input 
+                        type="tel" 
+                        value={newPlayerWhatsapp} 
+                        onChange={(e) => setNewPlayerWhatsapp(e.target.value)} 
+                        className="w-full bg-gray-50 dark:bg-black/20 border-0 rounded-[1.25rem] p-4 pl-11 text-sm font-bold shadow-inner" 
+                        placeholder="Ex: 11999999999" 
+                      />
+                      <span className="material-icons-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-green-500 text-lg">chat</span>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -1769,6 +2189,19 @@ const App: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black uppercase text-primary mb-2 block tracking-widest">Nome do Atleta</label>
                     <input type="text" value={editPlayerName} onChange={(e) => setEditPlayerName(e.target.value)} className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-[1.25rem] p-4 text-sm font-bold shadow-inner" placeholder="Nome" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-primary mb-2 block tracking-widest">WhatsApp (com DDD)</label>
+                    <div className="relative">
+                      <input 
+                        type="tel" 
+                        value={editPlayerWhatsapp} 
+                        onChange={(e) => setEditPlayerWhatsapp(e.target.value)} 
+                        className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-[1.25rem] p-4 pl-11 text-sm font-bold shadow-inner" 
+                        placeholder="Ex: 11999999999" 
+                      />
+                      <span className="material-icons-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-green-500 text-lg">chat</span>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4">
@@ -1959,6 +2392,142 @@ const App: React.FC = () => {
               >
                 <span className="material-icons-outlined text-base">close</span>
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE LOGIN DE ADMINISTRADOR */}
+        {isAdminLoginModalOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+            <div className="bg-surface-light dark:bg-surface-dark w-full max-w-sm rounded-[2.5rem] border border-gray-200 dark:border-gray-800 p-6 md:p-8 shadow-2xl relative">
+              <button 
+                onClick={() => {
+                  setIsAdminLoginModalOpen(false);
+                  setAdminPasswordInput('');
+                  setAdminLoginError('');
+                }}
+                className="absolute top-6 right-6 w-9 h-9 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center hover:bg-black/10 transition-colors"
+              >
+                <span className="material-icons-outlined text-sm">close</span>
+              </button>
+
+              <div className="flex flex-col items-center text-center mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3">
+                  <span className="material-icons-outlined text-2xl">admin_panel_settings</span>
+                </div>
+                <h3 className="text-xl font-black uppercase italic tracking-tight">Painel da Diretoria</h3>
+                <p className="text-xs text-muted-light mt-1">Digite a senha de administrador para liberar a edição completa do sistema.</p>
+              </div>
+
+              {adminLoginError && (
+                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold text-center">
+                  {adminLoginError}
+                </div>
+              )}
+
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-primary mb-2 block tracking-widest">Senha de Acesso</label>
+                  <div className="relative">
+                    <input 
+                      type="password" 
+                      autoFocus
+                      required
+                      value={adminPasswordInput}
+                      onChange={(e) => {
+                        setAdminPasswordInput(e.target.value);
+                        setAdminLoginError('');
+                      }}
+                      placeholder="••••••••"
+                      className="w-full bg-gray-50 dark:bg-black/30 border-0 rounded-2xl p-4 text-sm font-bold shadow-inner outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    <span className="material-icons-outlined absolute right-4 top-1/2 -translate-y-1/2 text-muted-light text-lg">lock</span>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full py-4 bg-primary text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-primary/25 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <span className="material-icons-outlined text-base">vpn_key</span>
+                  Entrar como Administrador
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL / BANNER DE VINCULAÇÃO AUTOMÁTICA PWA PARA ATLETA */}
+        {showAutoPwaPrompt && (
+          <div className="fixed inset-0 z-[115] flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+            <div className="bg-surface-light dark:bg-surface-dark w-full max-w-md rounded-[2.5rem] border border-primary/30 shadow-2xl p-6 md:p-8 relative space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
+                  <span className="material-icons-outlined text-2xl animate-bounce">notifications_active</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-green-500">Pesadão F.C. Notificações</span>
+                  <h3 className="text-base font-black uppercase tracking-tight">Bora fio, ativa as Notificações! 🔔</h3>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-light leading-relaxed">
+                Ativa aí para receber avisos de convocação, placares e relatórios do Pesadão no seu celular e registrar seu WhatsApp no BOT do time!
+              </p>
+
+              <div className="space-y-4 pt-2">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-primary mb-1.5 block tracking-widest">Selecione seu Nome (Atleta)</label>
+                  <select
+                    value={autoPwaAthleteId}
+                    onChange={(e) => setAutoPwaAthleteId(e.target.value)}
+                    className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-800 rounded-2xl p-3.5 text-xs font-bold shadow-inner"
+                  >
+                    <option value="">-- Selecione seu nome --</option>
+                    {players.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (#{p.jerseyNumber} - {p.position})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {autoPwaAthleteId && (
+                  <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-2.5 text-xs text-green-600 dark:text-green-400 animate-fade-in">
+                    <span className="material-icons-outlined text-base shrink-0">check_circle</span>
+                    <span className="font-semibold text-[11px]">
+                      {players.find(p => p.id === autoPwaAthleteId)?.whatsapp 
+                        ? `WhatsApp já cadastrado: ${players.find(p => p.id === autoPwaAthleteId)?.whatsapp}`
+                        : 'Pronto! Seu aparelho receberá todos os alertas do Pesadão.'}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={dismissAutoPwaPrompt}
+                    className="flex-1 py-3.5 rounded-2xl bg-gray-100 dark:bg-black/30 text-xs font-bold text-muted-light hover:bg-gray-200 transition-colors"
+                  >
+                    Mais tarde
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleAutoPwaRegister}
+                    disabled={isRegisteringAutoPwa}
+                    className="flex-[2] py-3.5 bg-green-600 hover:bg-green-700 text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-xl shadow-green-600/25 active:scale-95 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isRegisteringAutoPwa ? (
+                      <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-4 h-4"></span>
+                    ) : (
+                      <>
+                        <span className="material-icons-outlined text-sm">notifications_active</span>
+                        Ativar no Meu Celular
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -42,7 +42,7 @@ if (typeof window !== 'undefined') {
                   icon,
                   badge: icon,
                   vibrate: [100, 50, 100],
-                });
+                } as any);
               }).catch(() => {
                 try { new Notification(title, { body, icon }); } catch (e) {}
               });
@@ -78,7 +78,7 @@ export function triggerLocalNotification(title: string, body: string, icon = 'ht
           icon,
           badge: icon,
           vibrate: [100, 50, 100],
-        });
+        } as any);
       }).catch(() => {
         try { new Notification(title, { body, icon }); } catch (e) {}
       });
@@ -113,10 +113,16 @@ export function getNotificationPermissionStatus(): 'granted' | 'denied' | 'defau
   return Notification.permission;
 }
 
+export interface RegisterPushOptions {
+  playerId?: string;
+  playerName?: string;
+  whatsapp?: string;
+}
+
 /**
- * Solicita permissão de notificação, obtém o token FCM e envia ao nosso backend
+ * Solicita permissão de notificação, obtém o token FCM e envia ao nosso backend vinculando ao Atleta
  */
-export async function requestPermissionAndRegister(): Promise<{ success: boolean; token?: string; error?: string }> {
+export async function requestPermissionAndRegister(options?: RegisterPushOptions): Promise<{ success: boolean; token?: string; error?: string }> {
   try {
     const ua = navigator.userAgent;
     const isIOS = /iPhone|iPad|iPod/i.test(ua);
@@ -173,7 +179,18 @@ export async function requestPermissionAndRegister(): Promise<{ success: boolean
     else if (/Macintosh/i.test(ua)) platform = 'Mac';
     else if (/Windows/i.test(ua)) platform = 'Windows';
 
-    const deviceInfo = `${platform} (${navigator.appName || ''})`;
+    const pName = options?.playerName || localStorage.getItem('fcm_player_name') || '';
+    const pWhatsapp = options?.whatsapp || localStorage.getItem('fcm_whatsapp') || '';
+    const pId = options?.playerId || localStorage.getItem('fcm_player_id') || '';
+
+    const deviceInfoObj = {
+      platform,
+      os: platform,
+      browser: navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Safari') ? 'Safari' : 'Navegador PWA',
+      playerName: pName,
+      whatsapp: pWhatsapp,
+      playerId: pId
+    };
 
     // Registrar o token no nosso backend (que por sua vez salva no Supabase)
     const response = await fetch('/api/push/subscribe', {
@@ -183,7 +200,10 @@ export async function requestPermissionAndRegister(): Promise<{ success: boolean
       },
       body: JSON.stringify({
         fcmToken,
-        deviceInfo
+        deviceInfo: JSON.stringify(deviceInfoObj),
+        playerId: pId || undefined,
+        playerName: pName || undefined,
+        whatsapp: pWhatsapp || undefined
       })
     });
 
@@ -195,6 +215,10 @@ export async function requestPermissionAndRegister(): Promise<{ success: boolean
     // Salvar token e status localmente no localStorage para verificações futuras
     localStorage.setItem('fcm_token', fcmToken);
     localStorage.setItem('fcm_permission_granted', 'true');
+    localStorage.setItem('pwa_device_linked', 'true');
+    if (pName) localStorage.setItem('fcm_player_name', pName);
+    if (pWhatsapp) localStorage.setItem('fcm_whatsapp', pWhatsapp);
+    if (pId) localStorage.setItem('fcm_player_id', pId);
 
     return { success: true, token: fcmToken };
   } catch (err: any) {
@@ -231,12 +255,29 @@ export async function syncTokenOnStartup(): Promise<void> {
         else if (/Macintosh/i.test(ua)) platform = 'Mac';
         else if (/Windows/i.test(ua)) platform = 'Windows';
 
-        const deviceInfo = `${platform} (${navigator.appName || ''})`;
+        const pName = localStorage.getItem('fcm_player_name') || '';
+        const pWhatsapp = localStorage.getItem('fcm_whatsapp') || '';
+        const pId = localStorage.getItem('fcm_player_id') || '';
+
+        const deviceInfoObj = {
+          platform,
+          os: platform,
+          browser: navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Safari') ? 'Safari' : 'Navegador PWA',
+          playerName: pName,
+          whatsapp: pWhatsapp,
+          playerId: pId
+        };
 
         await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fcmToken: currentToken, deviceInfo })
+          body: JSON.stringify({ 
+            fcmToken: currentToken, 
+            deviceInfo: JSON.stringify(deviceInfoObj),
+            playerId: pId || undefined,
+            playerName: pName || undefined,
+            whatsapp: pWhatsapp || undefined
+          })
         });
 
         localStorage.setItem('fcm_token', currentToken);
