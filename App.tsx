@@ -1139,14 +1139,15 @@ const App: React.FC = () => {
       if (c && c.matchAutoSend && textPreview) {
         console.log('[WhatsApp] Auto-envio ativo para pós-jogo. Disparando relatório...');
         const matchId = matchObj.id || matchObj.date || Date.now();
-        const idempotencyKey = `match_report_auto_${matchId}_${matchObj.homeScore ?? 0}x${matchObj.awayScore ?? 0}`;
+        const idempotencyKey = `match_report_auto_${matchId}_${Date.now()}`;
+        const targetGroup = c.matchGroupId || c.groupId || undefined;
         
         setSendingMatchReport(true);
         try {
-          const res = await sendMatchWhatsAppReport(matchObj, textPreview, undefined, idempotencyKey);
+          const res = await sendMatchWhatsAppReport(matchObj, textPreview, targetGroup, idempotencyKey);
           console.log('[WhatsApp] Auto-envio pós-jogo concluído com sucesso:', res);
           setMatchShareFeedback({ 
-            text: 'Relatório do jogo enviado automaticamente via Auto-Envio! ⚽🔥', 
+            text: res.message || 'Relatório do jogo enviado automaticamente via Auto-Envio! ⚽🔥', 
             type: 'success' 
           });
           setTimeout(() => {
@@ -1173,17 +1174,20 @@ const App: React.FC = () => {
     setMatchShareFeedback(null);
     try {
       const matchId = matchToShare.id || matchToShare.date || Date.now();
-      const idempotencyKey = `match_report_${matchId}_${matchToShare.homeScore ?? 0}x${matchToShare.awayScore ?? 0}`;
-      const res = await sendMatchWhatsAppReport(matchToShare, matchShareText, undefined, idempotencyKey);
+      const idempotencyKey = `match_report_manual_${matchId}_${Date.now()}`;
+      const c = await getWhatsAppConfig().catch(() => null);
+      const targetGroup = c?.matchGroupId || c?.groupId || undefined;
+      const res = await sendMatchWhatsAppReport(matchToShare, matchShareText, targetGroup, idempotencyKey);
       
-      const feedbackText = res.message || 'Mensagem adicionada à fila de envio. O WhatsApp fará o envio automaticamente.';
+      const feedbackText = res.message || 'Relatório pós-jogo enviado com sucesso para o grupo! 🚀⚽';
       setMatchShareFeedback({ text: feedbackText, type: 'success' });
       setTimeout(() => {
         setIsMatchShareModalOpen(false);
       }, 2500);
     } catch (err: any) {
+      const errorMsg = err.message || 'Não foi possível preparar o envio. Verifique se o WhatsApp e o grupo estão configurados.';
       setMatchShareFeedback({ 
-        text: err.message || 'Não foi possível preparar o envio. Tente novamente.', 
+        text: errorMsg, 
         type: 'error' 
       });
     } finally {

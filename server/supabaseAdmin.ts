@@ -529,6 +529,30 @@ export async function enqueueMessage(msg: {
         .maybeSingle();
 
       if (existing) {
+        // Se for relatório de jogo, teste ou disparo manual, sempre reativa e atualiza a mensagem para envio garantido
+        const isForceable = msg.tipo === 'match_report' || msg.tipo === 'match_test' || msg.tipo === 'test' || msg.executionKey.includes('manual') || msg.executionKey.includes('test') || msg.executionKey.includes('report');
+        if (isForceable) {
+          await supabase
+            .from('whatsapp_queue')
+            .update({
+              status: 'pending',
+              mensagem: msg.mensagem,
+              destino: msg.destino,
+              attempts: 0,
+              error: null,
+              scheduled_at: scheduledAt,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+
+          return {
+            success: true,
+            status: 'pending',
+            message: 'Mensagem adicionada à fila de envio. O WhatsApp fará o envio automaticamente.',
+            id: existing.id,
+          };
+        }
+
         if (existing.status === 'sent') {
           console.log(`[SupabaseAdmin] Mensagem com chave única ${msg.executionKey} já foi enviada anteriormente.`);
           return {

@@ -779,46 +779,51 @@ class WhatsAppService {
 
 _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
 
-    const players = await getPlayersFromDb();
+    const players = await getPlayersFromDb().catch(() => []);
 
-    const opponent = matchData.opponent || 'Adversário';
-    const homeScore = Number(matchData.homeScore ?? matchData.home_score ?? 0);
-    const awayScore = Number(matchData.awayScore ?? matchData.away_score ?? 0);
+    const opponent = matchData?.opponent || 'Adversário';
+    const homeScore = Number(matchData?.homeScore ?? matchData?.home_score ?? 0);
+    const awayScore = Number(matchData?.awayScore ?? matchData?.away_score ?? 0);
     const placar = `${homeScore} x ${awayScore}`;
     const resultado = homeScore > awayScore ? 'VITÓRIA 🏆' : homeScore < awayScore ? 'DERROTA ❌' : 'EMPATE 🤝';
 
     // Data & Horário formatados
-    let dataFormatted = matchData.date || '';
-    if (dataFormatted.includes('-')) {
+    let dataFormatted = matchData?.date || '';
+    if (dataFormatted && dataFormatted.includes('-')) {
       const parts = dataFormatted.split('-');
       if (parts.length === 3) {
         dataFormatted = `${parts[2]}/${parts[1]}/${parts[0]}`;
       }
     }
-    const horario = matchData.time || '08:00';
-    const local = matchData.location || 'Campo do Pesadão';
+    const horario = matchData?.time || '08:00';
+    const local = matchData?.location || 'Campo do Pesadão';
 
     // Artilheiros
     let artilheirosText = '';
-    const lineup = typeof matchData.lineup === 'string' ? JSON.parse(matchData.lineup || '{}') : (matchData.lineup || {});
+    let lineup: any = {};
+    try {
+      lineup = typeof matchData?.lineup === 'string' ? JSON.parse(matchData.lineup || '{}') : (matchData?.lineup || {});
+    } catch (e) {
+      lineup = {};
+    }
 
     const goalScorers: { name: string; goals: number }[] = [];
 
     // Se tiver matchPlayerStats direto ou lineup
-    if (matchData.matchPlayerStats) {
+    if (matchData?.matchPlayerStats && typeof matchData.matchPlayerStats === 'object') {
       for (const [pid, stat] of Object.entries<any>(matchData.matchPlayerStats)) {
         if (stat && stat.goals > 0) {
-          const player = players.find((p: any) => p.id.toString() === pid.toString());
-          const name = player ? player.name.split(' ')[0] : `Atleta #${pid}`;
-          goalScorers.push({ name, goals: stat.goals });
+          const player = Array.isArray(players) ? players.find((p: any) => (p?.id ?? '').toString() === (pid ?? '').toString()) : null;
+          const name = player?.name ? player.name.split(' ')[0] : `Atleta #${pid}`;
+          goalScorers.push({ name, goals: Number(stat.goals) || 1 });
         }
       }
-    } else {
+    } else if (lineup && typeof lineup === 'object') {
       for (const [pid, pdata] of Object.entries<any>(lineup)) {
         const g = Number(pdata?.goals || 0);
         if (g > 0) {
-          const player = players.find((p: any) => p.id.toString() === pid.toString());
-          const name = player ? player.name.split(' ')[0] : `Atleta #${pid}`;
+          const player = Array.isArray(players) ? players.find((p: any) => (p?.id ?? '').toString() === (pid ?? '').toString()) : null;
+          const name = player?.name ? player.name.split(' ')[0] : `Atleta #${pid}`;
           goalScorers.push({ name, goals: g });
         }
       }
@@ -834,18 +839,20 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
 
     // Titulares
     const startersList: string[] = [];
-    for (const [pid, pdata] of Object.entries<any>(lineup)) {
-      if (pdata?.starterPos !== undefined) {
-        const player = players.find((p: any) => p.id.toString() === pid.toString());
-        if (player) {
-          startersList.push(player.name.split(' ')[0]);
+    if (lineup && typeof lineup === 'object') {
+      for (const [pid, pdata] of Object.entries<any>(lineup)) {
+        if (pdata && (pdata.starterPos !== undefined || pdata.isStarter)) {
+          const player = Array.isArray(players) ? players.find((p: any) => (p?.id ?? '').toString() === (pid ?? '').toString()) : null;
+          if (player?.name) {
+            startersList.push(player.name.split(' ')[0]);
+          }
         }
       }
     }
     const titularesText = startersList.length > 0 ? startersList.join(', ') : 'Escalação do quadro titular';
 
     // Observações
-    const observacoes = matchData.comments || 'Partida com grande entrega e espírito de equipe!';
+    const observacoes = matchData?.comments || 'Partida com grande entrega e espírito de equipe!';
 
     const replacements: Record<string, string> = {
       '{adversario}': opponent,
@@ -853,7 +860,7 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
       '{gols_pesadao}': homeScore.toString(),
       '{gols_adversario}': awayScore.toString(),
       '{resultado}': resultado,
-      '{data}': dataFormatted,
+      '{data}': dataFormatted || 'Data do Jogo',
       '{horario}': horario,
       '{local}': local,
       '{artilheiros}': artilheirosText,
@@ -875,13 +882,56 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
     const destGroupId = targetGroupId || config.matchGroupId || config.groupId;
 
     if (!destGroupId) {
-      throw new Error('Nenhum grupo de WhatsApp configurado para envio do pós-jogo.');
+      throw new Error('Nenhum grupo de WhatsApp configurado para envio do pós-jogo. Selecione o grupo nas configurações do bot.');
     }
 
-    const messageText = await this.formatMatchReport(matchData, customTemplate);
-    const matchIdentifier = matchData?.id || matchData?.date || Date.now();
-    const executionKey = idempotencyKey || `match_report_${matchIdentifier}_${matchData?.homeScore ?? 0}x${matchData?.awayScore ?? 0}`;
+    let messageText: string;
+    if (customTemplate && !customTemplate.includes('{adversario}') && !customTemplate.includes('{placar}')) {
+      messageText = customTemplate;
+    } else {
+      messageText = await this.formatMatchReport(matchData, customTemplate);
+    }
 
+    const matchIdentifier = matchData?.id || matchData?.date || Date.now();
+    const executionKey = idempotencyKey || `match_report_${matchIdentifier}_${Date.now()}`;
+
+    // 1. Envio direto imediato se o WhatsApp já estiver conectado
+    if (this.sock && this.status === 'connected') {
+      try {
+        const targetJid = normalizeJid(destGroupId);
+        await this.sock.sendMessage(targetJid, { text: messageText });
+
+        await logWhatsAppMessage({
+          groupId: destGroupId,
+          groupName: (config.matchGroupId === destGroupId ? config.matchGroupName : config.groupName) || 'Grupo das Partidas',
+          type: 'match_report',
+          status: 'sent',
+          referenceWeek: executionKey,
+          message: messageText,
+        });
+
+        await enqueueMessage({
+          tipo: 'match_report',
+          destino: destGroupId,
+          mensagem: messageText,
+          executionKey: executionKey,
+        }).then(async (qRes) => {
+          if (qRes.id) {
+            await updateQueueMessageStatus(qRes.id, 'sent', { attempts: 1 });
+          }
+        }).catch(() => {});
+
+        return {
+          success: true,
+          status: 'sent',
+          message: 'Relatório pós-jogo enviado com sucesso ao grupo do WhatsApp! 🚀⚽',
+        };
+      } catch (err: any) {
+        console.warn('[WhatsAppService] Falha no envio direto do relatório pós-jogo, enfileirando fallback:', err?.message || err);
+      }
+    }
+
+    // 2. Enfileiramento resiliente
     const queueRes = await enqueueMessage({
       tipo: 'match_report',
       destino: destGroupId,
@@ -889,7 +939,6 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
       executionKey: executionKey,
     });
 
-    // Disparar processamento da fila em segundo plano imediatamente
     setImmediate(() => {
       this.processPendingQueue().catch((err) => {
         console.error('[WhatsAppService] Erro ao processar fila em background após relatório de jogo:', err);
@@ -899,7 +948,7 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
     return {
       success: true,
       status: queueRes.status,
-      message: queueRes.message,
+      message: 'Relatório pós-jogo adicionado à fila. O envio será processado automaticamente pelo WhatsApp!',
     };
   }
 
@@ -925,9 +974,44 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
       },
     };
 
-    const formatted = await this.formatMatchReport(dummyMatch);
+    const formatted = await this.formatMatchReport(dummyMatch, config.matchMessageTemplate);
     const testText = `🤖 *TESTE DE RELATÓRIO PÓS-JOGO*\n_Esta é uma mensagem de demonstração do pós-jogo._\n\n${formatted}`;
     const executionKey = idempotencyKey || `match_test_${destGroupId}_${Date.now()}`;
+
+    if (this.sock && this.status === 'connected') {
+      try {
+        const targetJid = normalizeJid(destGroupId);
+        await this.sock.sendMessage(targetJid, { text: testText });
+
+        await logWhatsAppMessage({
+          groupId: destGroupId,
+          groupName: (config.matchGroupId === destGroupId ? config.matchGroupName : config.groupName) || 'Grupo das Partidas',
+          type: 'match_test',
+          status: 'sent',
+          referenceWeek: executionKey,
+          message: testText,
+        });
+
+        await enqueueMessage({
+          tipo: 'match_test',
+          destino: destGroupId,
+          mensagem: testText,
+          executionKey: executionKey,
+        }).then(async (qRes) => {
+          if (qRes.id) {
+            await updateQueueMessageStatus(qRes.id, 'sent', { attempts: 1 });
+          }
+        }).catch(() => {});
+
+        return {
+          success: true,
+          status: 'sent',
+          message: 'Mensagem de teste do pós-jogo enviada com sucesso ao grupo! ⚽',
+        };
+      } catch (err: any) {
+        console.warn('[WhatsAppService] Falha no envio direto do teste de jogo:', err?.message || err);
+      }
+    }
 
     const queueRes = await enqueueMessage({
       tipo: 'match_test',
@@ -945,7 +1029,7 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
     return {
       success: true,
       status: queueRes.status,
-      message: queueRes.message,
+      message: 'Mensagem de teste adicionada à fila de envio do WhatsApp.',
     };
   }
 

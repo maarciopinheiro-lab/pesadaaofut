@@ -714,6 +714,25 @@ async function enqueueDirectToSupabase(params: {
       .maybeSingle();
 
     if (existing) {
+      const isForceable = params.tipo === 'match_report' || params.tipo === 'match_test' || params.tipo === 'test' || params.executionKey.includes('manual') || params.executionKey.includes('test') || params.executionKey.includes('report');
+      if (isForceable) {
+        await supabase.from('whatsapp_queue').update({
+          status: 'pending',
+          mensagem: params.mensagem,
+          destino: params.destino,
+          attempts: 0,
+          error: null,
+          scheduled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', existing.id);
+
+        return {
+          success: true,
+          status: 'pending',
+          message: 'Mensagem adicionada à fila de envio. O WhatsApp fará o envio automaticamente.',
+        };
+      }
+
       if (existing.status === 'sent') {
         return {
           success: true,
@@ -804,12 +823,12 @@ export async function sendNow(customTemplate?: string, players?: any[], monthKey
 
 export async function sendMatchWhatsAppReport(matchData: any, template?: string, targetGroupId?: string, idempotencyKey?: string): Promise<{ success: boolean; message: string; status?: string }> {
   const matchId = matchData?.id || matchData?.date || Date.now();
-  const key = idempotencyKey || `match_report_${matchId}_${matchData?.homeScore ?? 0}x${matchData?.awayScore ?? 0}`;
+  const key = idempotencyKey || `match_report_${matchId}_${Date.now()}`;
   try {
     return await requestWhatsAppApi('/send-match', {
       method: 'POST',
       body: JSON.stringify({ matchData, template, targetGroupId, idempotencyKey: key }),
-    }, 12000);
+    }, 15000);
   } catch (err: any) {
     console.warn('[WhatsAppClient] Erro ou timeout na rota /send-match, tentando enfileiramento via Supabase:', err.message);
     const config = await getWhatsAppConfig();
