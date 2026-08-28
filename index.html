@@ -13,8 +13,11 @@
     <meta name="apple-mobile-web-app-title" content="Pesadão FC" />
     <link rel="apple-touch-icon" href="https://i.imgur.com/CxbCPR5.png" />
     
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+    <!-- Fonts with Preconnect for fast mobile rendering -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <style>
       :root {
@@ -72,17 +75,6 @@
         },
       };
     </script>
-    <script type="importmap">
-    {
-      "imports": {
-        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-        "react/": "https://aistudiocdn.com/react@^19.2.1/",
-        "react": "https://aistudiocdn.com/react@^19.2.1",
-        "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.86.2"
-      }
-    }
-    </script>
-  <link rel="stylesheet" href="/index.css">
 </head>
   <body class="font-display bg-background-dark text-gray-100 min-h-screen relative overflow-x-hidden">
     <div id="root"></div>
