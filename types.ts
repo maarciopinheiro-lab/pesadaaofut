@@ -43,6 +43,7 @@ export interface Match {
   opponent: string;
   locationImg: string | null;
   location?: string; // Campo novo para nome do local
+  uniform?: 'Azul' | 'Preto' | string; // Cor do uniforme do Pesadão
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   homeScore: number;
@@ -58,6 +59,7 @@ export interface DbMatch {
   opponent: string;
   location_img: string | null;
   location?: string;
+  uniform?: string;
   date: string;
   time: string;
   home_score: number;

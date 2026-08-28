@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS public.matches (
     opponent TEXT NOT NULL,
     location_img TEXT,
     location TEXT DEFAULT '',
+    uniform TEXT DEFAULT 'Azul', -- 'Azul' ou 'Preto'
     date TEXT NOT NULL, -- formato YYYY-MM-DD
     time TEXT NOT NULL, -- formato HH:MM
     home_score INT DEFAULT 0,
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.matches (
 );
 
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '';
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS uniform TEXT DEFAULT 'Azul';
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS lineup JSONB;
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS comments TEXT DEFAULT '';
 

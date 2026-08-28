@@ -208,6 +208,15 @@ const App: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addMode, setAddMode] = useState<'player' | 'match'>('player');
   
+  const [isEditMatchModalOpen, setIsEditMatchModalOpen] = useState(false);
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [editMatchOpponent, setEditMatchOpponent] = useState('');
+  const [editMatchLocation, setEditMatchLocation] = useState('');
+  const [editMatchUniform, setEditMatchUniform] = useState<'Azul' | 'Preto'>('Azul');
+  const [editMatchDate, setEditMatchDate] = useState('');
+  const [editMatchTime, setEditMatchTime] = useState('');
+  const [editMatchLocationImg, setEditMatchLocationImg] = useState<string | null>(null);
+
   const [isEditPlayerModalOpen, setIsEditPlayerModalOpen] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [editPlayerName, setEditPlayerName] = useState('');
@@ -287,6 +296,7 @@ const App: React.FC = () => {
   
   const [newMatchOpponent, setNewMatchOpponent] = useState('');
   const [newMatchLocation, setNewMatchLocation] = useState('');
+  const [newMatchUniform, setNewMatchUniform] = useState<'Azul' | 'Preto'>('Azul');
   // Inicializa com o próximo domingo
   const [newMatchDate, setNewMatchDate] = useState(() => {
     const d = new Date();
@@ -525,6 +535,7 @@ const App: React.FC = () => {
           opponent: m.opponent,
           locationImg: m.location_img,
           location: m.location || '',
+          uniform: m.uniform || 'Azul',
           date: m.date,
           time: m.time,
           homeScore: m.home_score,
@@ -842,15 +853,93 @@ const App: React.FC = () => {
     setIsSubmitting(true);
     const supabase = getSupabase();
     if(supabase) {
-        const { error } = await supabase.from('matches').insert([{ opponent: newMatchOpponent, location: newMatchLocation, date: newMatchDate, time: newMatchTime, location_img: newMatchLocationImg, result: 'pending', is_finished: false }]);
+        const payload: any = { 
+          opponent: newMatchOpponent, 
+          location: newMatchLocation, 
+          uniform: newMatchUniform,
+          date: newMatchDate, 
+          time: newMatchTime, 
+          location_img: newMatchLocationImg, 
+          result: 'pending', 
+          is_finished: false 
+        };
+        let { error } = await supabase.from('matches').insert([payload]);
+        if (error && error.message?.includes('uniform')) {
+          delete payload.uniform;
+          const res = await supabase.from('matches').insert([payload]);
+          error = res.error;
+        }
         if (!error) await fetchData();
     }
-    setNewMatchOpponent(''); setNewMatchLocation(''); 
+    setNewMatchOpponent(''); 
+    setNewMatchLocation(''); 
+    setNewMatchUniform('Azul');
     // Reset date to next Sunday
     const d = new Date();
     d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay()));
     setNewMatchDate(d.toISOString().split('T')[0]);
-    setNewMatchTime(''); setNewMatchLocationImg(null); setIsAddModalOpen(false); setIsSubmitting(false);
+    setNewMatchTime(''); 
+    setNewMatchLocationImg(null); 
+    setIsAddModalOpen(false); 
+    setIsSubmitting(false);
+  };
+
+  const openEditMatchModal = (match: Match, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditingMatch(match);
+    setEditMatchOpponent(match.opponent);
+    setEditMatchLocation(match.location || '');
+    setEditMatchUniform((match.uniform === 'Preto' ? 'Preto' : 'Azul') as 'Azul' | 'Preto');
+    setEditMatchDate(match.date);
+    setEditMatchTime(match.time || '');
+    setEditMatchLocationImg(match.locationImg || null);
+    setIsEditMatchModalOpen(true);
+  };
+
+  const handleSaveEditMatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMatch || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const supabase = getSupabase();
+      if (supabase) {
+        const payload: any = {
+          opponent: editMatchOpponent,
+          location: editMatchLocation,
+          uniform: editMatchUniform,
+          date: editMatchDate,
+          time: editMatchTime,
+          location_img: editMatchLocationImg,
+        };
+        let { error } = await supabase
+          .from('matches')
+          .update(payload)
+          .eq('id', parseInt(editingMatch.id));
+        
+        if (error && error.message?.includes('uniform')) {
+          delete payload.uniform;
+          const res = await supabase
+            .from('matches')
+            .update(payload)
+            .eq('id', parseInt(editingMatch.id));
+          error = res.error;
+        }
+        
+        if (!error) {
+          await fetchData();
+          setIsEditMatchModalOpen(false);
+          setEditingMatch(null);
+        } else {
+          alert(`Erro ao salvar alterações: ${error.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error("Erro ao editar partida:", err);
+      alert("Ocorreu um erro ao salvar a partida.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const deleteMatch = async (id: string, e: React.MouseEvent) => {
@@ -1445,13 +1534,62 @@ const App: React.FC = () => {
                 {filtered.map(m => (
                     <div key={m.id} className={`relative rounded-2xl overflow-hidden flex flex-col transition-all duration-300 ${matchViewMode === 'upcoming' ? 'bg-gradient-to-br from-primary to-[#f9abd8] text-black' : 'bg-surface-light dark:bg-surface-dark border border-gray-200 dark:border-gray-800 shadow-sm'}`}>
                         {userRole === 'admin' && (
-                          <div className="absolute top-3 right-3 z-30"><button onClick={(e) => deleteMatch(m.id, e)} className={`p-2 rounded-full hover:bg-black/10 ${matchViewMode === 'upcoming' ? 'text-black' : 'text-muted-light'}`}><span className="material-icons-outlined text-lg">delete_outline</span></button></div>
+                          <div className="absolute top-3 right-3 z-30 flex items-center gap-1">
+                            <button 
+                              onClick={(e) => openEditMatchModal(m, e)} 
+                              title="Editar Partida"
+                              className={`p-1.5 rounded-full hover:bg-black/10 transition-colors ${matchViewMode === 'upcoming' ? 'text-black' : 'text-muted-light hover:text-primary'}`}
+                            >
+                              <span className="material-icons-outlined text-base">edit</span>
+                            </button>
+                            <button 
+                              onClick={(e) => deleteMatch(m.id, e)} 
+                              title="Excluir Partida"
+                              className={`p-1.5 rounded-full hover:bg-black/10 transition-colors ${matchViewMode === 'upcoming' ? 'text-black' : 'text-muted-light hover:text-red-500'}`}
+                            >
+                              <span className="material-icons-outlined text-base">delete_outline</span>
+                            </button>
+                          </div>
                         )}
                         <div className="p-6 pt-10 flex items-center justify-between">
-                             <div className="flex flex-col items-center gap-2 w-1/3"><img src={TEAM_LOGO_URL} className="w-10 h-10 object-contain" /><span className="font-bold text-xs truncate">Pesadão</span></div>
-                             <div className="flex flex-col items-center justify-center w-1/3">
-                                 <div className="px-3 py-1.5 rounded-lg font-mono text-3xl font-bold mb-2">{m.isFinished ? `${m.homeScore}-${m.awayScore}` : 'VS'}</div>
-                                 <div className="text-[10px] font-bold uppercase opacity-80 text-center"><span>{new Date(m.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span><br/><span>{m.time.slice(0,5)}</span></div>
+                             <div className="flex flex-col items-center gap-1.5 w-1/3 text-center">
+                                 <img src={TEAM_LOGO_URL} className="w-10 h-10 object-contain drop-shadow-sm" />
+                                 <span className="font-bold text-xs truncate">Pesadão</span>
+                                 <div 
+                                   className={`inline-flex items-center justify-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border shadow-xs transition-all ${
+                                     (m.uniform || 'Azul') === 'Preto' 
+                                       ? 'bg-black/85 text-white border-zinc-700' 
+                                       : matchViewMode === 'upcoming'
+                                         ? 'bg-black/15 text-black border-black/25'
+                                         : 'bg-[#43c6fa]/15 text-[#43c6fa] border-[#43c6fa]/30'
+                                   }`} 
+                                   title={`Uniforme ${m.uniform || 'Azul'}`}
+                                 >
+                                   <svg 
+                                     className="w-2.5 h-2.5 shrink-0" 
+                                     viewBox="0 0 24 24" 
+                                     fill={(m.uniform || 'Azul') === 'Preto' ? '#18181b' : '#43c6fa'} 
+                                     stroke={(m.uniform || 'Azul') === 'Preto' ? '#ffffff' : (matchViewMode === 'upcoming' ? '#000000' : '#43c6fa')} 
+                                     strokeWidth="1.2"
+                                   >
+                                     <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                                   </svg>
+                                   <span className="leading-none">{m.uniform || 'Azul'}</span>
+                                 </div>
+                             </div>
+                             <div className="flex flex-col items-center justify-center w-1/3 text-center px-1">
+                                 <div className="px-3 py-1.5 rounded-lg font-mono text-3xl font-bold mb-1">{m.isFinished ? `${m.homeScore}-${m.awayScore}` : 'VS'}</div>
+                                 <div className="text-[10px] font-bold uppercase opacity-80 text-center leading-tight">
+                                     <span>{new Date(m.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+                                     <br/>
+                                     <span>{m.time.slice(0,5)}</span>
+                                 </div>
+                                 {m.location && (
+                                     <div className={`mt-2 inline-flex items-center justify-center gap-1 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full max-w-full truncate ${matchViewMode === 'upcoming' ? 'bg-black/15 text-black' : 'bg-primary/10 text-primary border border-primary/20'}`} title={m.location}>
+                                         <span className="material-icons-outlined text-[13px] shrink-0">place</span>
+                                         <span className="truncate">{m.location}</span>
+                                     </div>
+                                 )}
                              </div>
                              <div className="flex flex-col items-center gap-2 w-1/3 text-center"><div className="w-10 h-10 rounded-full flex items-center justify-center bg-white/10 overflow-hidden">{m.locationImg ? <img src={m.locationImg} className="w-full h-full object-cover" /> : <span className="material-icons-outlined">sports_soccer</span>}</div><span className="font-bold text-xs truncate w-full">{m.opponent}</span></div>
                         </div>
@@ -2261,9 +2399,25 @@ const App: React.FC = () => {
                 
                 {/* INFO CARD TOP - RESUMO IGUAL AGENDA */}
                 <div className="bg-white/5 dark:bg-black/20 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[2rem] p-5 flex items-center justify-between mb-2 shadow-inner">
-                    <div className="flex flex-col items-center gap-1.5 flex-1 min-w-0">
+                    <div className="flex flex-col items-center gap-1 flex-1 min-w-0 text-center">
                         <img src={TEAM_LOGO_URL} className="w-9 h-9 object-contain" />
                         <span className="text-[10px] font-black uppercase italic tracking-tighter leading-none truncate w-full text-center">Pesadão</span>
+                        <div className={`inline-flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded-full shadow-xs ${
+                            (selectedMatch.uniform || 'Azul') === 'Preto'
+                                ? 'bg-black text-white border border-zinc-700'
+                                : 'bg-[#43c6fa]/20 text-[#006080] dark:text-[#43c6fa] border border-[#43c6fa]/40'
+                        }`}>
+                            <svg 
+                              className="w-2.5 h-2.5 shrink-0" 
+                              viewBox="0 0 24 24" 
+                              fill={(selectedMatch.uniform || 'Azul') === 'Preto' ? '#ffffff' : '#43c6fa'} 
+                              stroke={(selectedMatch.uniform || 'Azul') === 'Preto' ? '#ffffff' : '#43c6fa'} 
+                              strokeWidth="1"
+                            >
+                              <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                            </svg>
+                            <span>{selectedMatch.uniform || 'Azul'}</span>
+                        </div>
                     </div>
                     
                     <div className="flex flex-col items-center justify-center px-2 md:px-4 flex-shrink-0">
@@ -2283,7 +2437,13 @@ const App: React.FC = () => {
                           />
                         </div>
                         <div className="text-[9px] font-bold uppercase opacity-50 text-center leading-tight">
-                            {new Date(selectedMatch.date + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'short'})} • {selectedMatch.time.slice(0,5)}
+                            <span>{new Date(selectedMatch.date + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'short'})} • {selectedMatch.time.slice(0,5)}</span>
+                            {selectedMatch.location && (
+                                <span className="flex items-center justify-center gap-1 mt-1 text-[8px] font-black uppercase text-primary tracking-wider">
+                                    <span className="material-icons-outlined text-[11px]">place</span>
+                                    {selectedMatch.location}
+                                </span>
+                            )}
                         </div>
                     </div>
 
@@ -2527,65 +2687,266 @@ const App: React.FC = () => {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={handleAddMatch} className="space-y-6">
-                  {/* Opponent & Location side-by-side or stacked cleanly */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="relative">
-                      <input type="text" required placeholder="Adversário" value={newMatchOpponent} onChange={(e) => setNewMatchOpponent(e.target.value)} className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-2xl p-4 text-sm font-bold placeholder:opacity-30" />
+                <form onSubmit={handleAddMatch} className="space-y-4">
+                  {/* Adversário & Local */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-primary mb-1 block px-1">Adversário</label>
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Ex: Alkaeda" 
+                        value={newMatchOpponent} 
+                        onChange={(e) => setNewMatchOpponent(e.target.value)} 
+                        className="w-full bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-bold placeholder:opacity-40 focus:ring-1 focus:ring-primary outline-none" 
+                      />
                     </div>
-                    <div className="relative">
-                      <input type="text" required placeholder="Local do Jogo" value={newMatchLocation} onChange={(e) => setNewMatchLocation(e.target.value)} className="w-full bg-gray-100 dark:bg-black/20 border-0 rounded-2xl p-4 text-sm font-bold placeholder:opacity-30" />
-                    </div>
-                  </div>
-
-                  {/* Minimalist Sunday Chips */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-primary px-1">Selecione o Domingo</label>
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-                      {nextSundays.map(date => {
-                        const val = date.toISOString().split('T')[0];
-                        const isSelected = newMatchDate === val;
-                        return (
-                          <button 
-                            type="button"
-                            key={val}
-                            onClick={() => setNewMatchDate(val)}
-                            className={`flex-shrink-0 w-14 h-16 rounded-2xl flex flex-col items-center justify-center border-2 transition-all duration-300 ${
-                              isSelected 
-                              ? 'bg-primary border-primary text-white shadow-lg shadow-primary/20' 
-                              : 'bg-gray-100 dark:bg-black/20 border-transparent text-muted-light hover:border-gray-300 dark:hover:border-gray-700'
-                            }`}
-                          >
-                            <span className="text-[8px] font-bold uppercase leading-none mb-1 opacity-60">
-                              {date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}
-                            </span>
-                            <span className="text-lg font-black italic leading-none">{date.getDate()}</span>
-                          </button>
-                        );
-                      })}
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-wider text-primary mb-1 block px-1">Local da Partida</label>
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="Ex: Arena Soccer" 
+                        value={newMatchLocation} 
+                        onChange={(e) => setNewMatchLocation(e.target.value)} 
+                        className="w-full bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-bold placeholder:opacity-40 focus:ring-1 focus:ring-primary outline-none" 
+                      />
                     </div>
                   </div>
 
-                  {/* Subtle Time Input */}
-                  <div className="flex items-center justify-between bg-gray-100 dark:bg-black/20 p-4 rounded-2xl border border-black/5">
+                  {/* Domingo & Uniforme lado a lado */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Coluna 1: Domingo */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center gap-1">
+                        <span className="material-icons-outlined text-[13px]">calendar_today</span>
+                        Selecione o Domingo
+                      </label>
+                      <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide -mx-0.5 px-0.5">
+                        {nextSundays.map(date => {
+                          const val = date.toISOString().split('T')[0];
+                          const isSelected = newMatchDate === val;
+                          return (
+                            <button 
+                              type="button"
+                              key={val}
+                              onClick={() => setNewMatchDate(val)}
+                              className={`flex-shrink-0 w-11 h-12 rounded-xl flex flex-col items-center justify-center border transition-all ${
+                                isSelected 
+                                ? 'bg-primary border-primary text-white shadow-md shadow-primary/25 font-black' 
+                                : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-primary/40'
+                              }`}
+                            >
+                              <span className="text-[7px] font-bold uppercase leading-none mb-0.5 opacity-70">
+                                {date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}
+                              </span>
+                              <span className="text-sm font-black italic leading-none">{date.getDate()}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Coluna 2: Uniforme */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center gap-1">
+                        <span className="material-icons-outlined text-[13px]">checkroom</span>
+                        Uniforme do Pesadão
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setNewMatchUniform('Azul')}
+                          className={`h-12 px-2 rounded-xl flex items-center justify-center gap-1.5 font-black text-[11px] uppercase border transition-all ${
+                            newMatchUniform === 'Azul'
+                              ? 'bg-[#43c6fa] border-[#43c6fa] text-black shadow-md shadow-[#43c6fa]/30 ring-2 ring-[#43c6fa]/40'
+                              : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-[#43c6fa]/40'
+                          }`}
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="#43c6fa" stroke="currentColor" strokeWidth="1.2">
+                            <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                          </svg>
+                          <span>Azul</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewMatchUniform('Preto')}
+                          className={`h-12 px-2 rounded-xl flex items-center justify-center gap-1.5 font-black text-[11px] uppercase border transition-all ${
+                            newMatchUniform === 'Preto'
+                              ? 'bg-black border-zinc-600 text-white shadow-md shadow-black/40 ring-2 ring-zinc-500/40'
+                              : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-zinc-500/40'
+                          }`}
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="#18181b" stroke="#ffffff" strokeWidth="1.2">
+                            <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                          </svg>
+                          <span>Preto</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Horário de Início (Não corta no mobile) */}
+                  <div className="flex items-center justify-between bg-gray-100 dark:bg-black/30 px-3.5 py-2.5 rounded-xl border border-black/5 dark:border-white/10">
                     <div className="flex items-center gap-2">
-                      <span className="material-icons-outlined text-muted-light text-sm">schedule</span>
-                      <label className="text-[10px] font-black uppercase text-muted-light">Horário de Início</label>
+                      <span className="material-icons-outlined text-primary text-base">schedule</span>
+                      <span className="text-[10px] font-black uppercase text-gray-700 dark:text-gray-200">Horário do Jogo</span>
                     </div>
                     <input 
                       type="time" 
                       required 
                       value={newMatchTime} 
                       onChange={(e) => setNewMatchTime(e.target.value)} 
-                      className="bg-transparent border-0 p-0 text-sm font-black text-primary focus:ring-0 w-16 text-right appearance-none" 
+                      className="bg-white dark:bg-black/60 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1 text-sm font-black text-primary focus:ring-1 focus:ring-primary focus:outline-none min-w-[105px] text-center" 
                     />
                   </div>
 
-                  <button type="submit" disabled={isSubmitting} className="w-full bg-primary text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 mt-2 active:scale-95 transition-all">
-                    {isSubmitting ? 'Marcando...' : 'Confirmar Partida'}
+                  <button type="submit" disabled={isSubmitting} className="w-full bg-primary text-white font-black py-3.5 rounded-xl shadow-lg shadow-primary/20 mt-1 active:scale-95 transition-all text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+                    {isSubmitting ? (
+                      <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-4 h-4"></span>
+                    ) : (
+                      <>Confirmar Partida</>
+                    )}
                   </button>
                 </form>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL EDITAR PARTIDA */}
+        {isEditMatchModalOpen && editingMatch && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+            <div className="bg-surface-light dark:bg-surface-dark w-full max-w-lg rounded-[2rem] border border-gray-200 dark:border-gray-800 p-6 my-auto shadow-2xl relative">
+              <button 
+                onClick={() => setIsEditMatchModalOpen(false)} 
+                className="absolute top-5 right-5 w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-sm">close</span>
+              </button>
+              
+              <h3 className="text-lg font-black uppercase italic tracking-tight mb-5 flex items-center gap-2">
+                <span className="material-icons-outlined text-primary">edit_calendar</span>
+                Editar Partida
+              </h3>
+              
+              <form onSubmit={handleSaveEditMatch} className="space-y-4">
+                {/* Adversário & Local */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-wider text-primary mb-1 block px-1">Adversário</label>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="Ex: Alkaeda" 
+                      value={editMatchOpponent} 
+                      onChange={(e) => setEditMatchOpponent(e.target.value)} 
+                      className="w-full bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-bold placeholder:opacity-40 focus:ring-1 focus:ring-primary outline-none" 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-wider text-primary mb-1 block px-1">Local da Partida</label>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="Ex: Arena Soccer" 
+                      value={editMatchLocation} 
+                      onChange={(e) => setEditMatchLocation(e.target.value)} 
+                      className="w-full bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-bold placeholder:opacity-40 focus:ring-1 focus:ring-primary outline-none" 
+                    />
+                  </div>
+                </div>
+
+                {/* Data do Jogo & Uniforme */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center gap-1">
+                      <span className="material-icons-outlined text-[13px]">calendar_today</span>
+                      Data do Jogo
+                    </label>
+                    <input 
+                      type="date" 
+                      required 
+                      value={editMatchDate} 
+                      onChange={(e) => setEditMatchDate(e.target.value)} 
+                      className="w-full h-12 bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:ring-1 focus:ring-primary outline-none" 
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center gap-1">
+                      <span className="material-icons-outlined text-[13px]">checkroom</span>
+                      Uniforme do Pesadão
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditMatchUniform('Azul')}
+                        className={`h-12 px-2 rounded-xl flex items-center justify-center gap-1.5 font-black text-[11px] uppercase border transition-all ${
+                          editMatchUniform === 'Azul'
+                            ? 'bg-[#43c6fa] border-[#43c6fa] text-black shadow-md shadow-[#43c6fa]/30 ring-2 ring-[#43c6fa]/40'
+                            : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-[#43c6fa]/40'
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="#43c6fa" stroke="currentColor" strokeWidth="1.2">
+                          <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                        </svg>
+                        <span>Azul</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditMatchUniform('Preto')}
+                        className={`h-12 px-2 rounded-xl flex items-center justify-center gap-1.5 font-black text-[11px] uppercase border transition-all ${
+                          editMatchUniform === 'Preto'
+                            ? 'bg-black border-zinc-600 text-white shadow-md shadow-black/40 ring-2 ring-zinc-500/40'
+                            : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-zinc-500/40'
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="#18181b" stroke="#ffffff" strokeWidth="1.2">
+                          <path d="M7 3l3 2a2.5 2.5 0 004 0l3-2 4 4-2.5 2.5-1.5-1V21H6V8.5l-1.5 1L2 7l5-4z" />
+                        </svg>
+                        <span>Preto</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Horário */}
+                <div className="flex items-center justify-between bg-gray-100 dark:bg-black/30 px-3.5 py-2.5 rounded-xl border border-black/5 dark:border-white/10">
+                  <div className="flex items-center gap-2">
+                    <span className="material-icons-outlined text-primary text-base">schedule</span>
+                    <span className="text-[10px] font-black uppercase text-gray-700 dark:text-gray-200">Horário do Jogo</span>
+                  </div>
+                  <input 
+                    type="time" 
+                    required 
+                    value={editMatchTime} 
+                    onChange={(e) => setEditMatchTime(e.target.value)} 
+                    className="bg-white dark:bg-black/60 border border-gray-200 dark:border-gray-700 rounded-lg px-2.5 py-1 text-sm font-black text-primary focus:ring-1 focus:ring-primary focus:outline-none min-w-[105px] text-center" 
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsEditMatchModalOpen(false)}
+                    className="flex-1 bg-gray-200 dark:bg-gray-800 text-muted-light font-bold py-3.5 rounded-xl text-xs uppercase"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isSubmitting} 
+                    className="flex-1 bg-primary text-white font-black py-3.5 rounded-xl shadow-lg shadow-primary/20 text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting ? (
+                      <span className="animate-spin border-2 border-white/20 border-t-white rounded-full w-4 h-4"></span>
+                    ) : (
+                      <>Salvar Alterações</>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
