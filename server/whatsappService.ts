@@ -851,12 +851,17 @@ _#PesadãoFC #FutebolDeDomingo #FamiliaPesadão_`;
     }
     const titularesText = startersList.length > 0 ? startersList.join(', ') : 'Escalação do quadro titular';
 
+    // Tipo de partida
+    const isCampeonato = (matchData?.matchType === 'campeonato' || matchData?.match_type === 'campeonato');
+    const tipoPartida = isCampeonato ? 'Campeonato 🏆' : 'Amistoso 🤝';
+
     // Observações
     const observacoes = matchData?.comments || 'Partida com grande entrega e espírito de equipe!';
 
     const replacements: Record<string, string> = {
       '{adversario}': opponent,
       '{placar}': placar,
+      '{tipo_partida}': tipoPartida,
       '{gols_pesadao}': homeScore.toString(),
       '{gols_adversario}': awayScore.toString(),
       '{resultado}': resultado,

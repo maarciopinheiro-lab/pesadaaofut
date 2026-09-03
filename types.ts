@@ -44,6 +44,7 @@ export interface Match {
   locationImg: string | null;
   location?: string; // Campo novo para nome do local
   uniform?: 'Azul' | 'Preto' | string; // Cor do uniforme do Pesadão
+  matchType?: 'amistoso' | 'campeonato' | string; // Tipo de jogo: Amistoso ou Campeonato
   date: string; // YYYY-MM-DD
   time: string; // HH:MM
   homeScore: number;
@@ -60,6 +61,7 @@ export interface DbMatch {
   location_img: string | null;
   location?: string;
   uniform?: string;
+  match_type?: string;
   date: string;
   time: string;
   home_score: number;

@@ -20,6 +20,29 @@ const FIELD_POSITIONS = [
   { id: 6, label: 'ATA', top: '15%', left: '70%' },
 ];
 
+// Ícone SVG de Amistoso (Aperto de mão / Handshake)
+const HandshakeIcon: React.FC<{ className?: string }> = ({ className = "w-3 h-3" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m11 17 2 2a1 1 0 0 0 1.4 0l4.6-4.6a2 2 0 0 0 0-2.8l-1.4-1.4a2 2 0 0 0-2.8 0L13 12" />
+    <path d="m13 12-2.5-2.5a2 2 0 0 0-2.8 0l-1.4 1.4a2 2 0 0 0 0 2.8l4.6 4.6a1 1 0 0 0 1.4 0l.7-.7" />
+    <path d="M18.5 7.5 14 12" />
+    <path d="m3 11 4.5 4.5" />
+    <path d="m6 4.5 3 3" />
+    <path d="m15 19.5 3-3" />
+  </svg>
+);
+
+// Ícone SVG de Campeonato (Troféu / Trophy)
+const TrophyIcon: React.FC<{ className?: string }> = ({ className = "w-3 h-3" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+    <path d="M4 22h16" />
+    <path d="M10 14.66V17c0 .55-.45 1-1 1H7c-.55 0-1 .45-1 1v1c0 .55.45 1 1 1h10c.55 0 1-.45 1-1v-1c0-.55-.45-1-1-1h-2c-.55 0-1-.45-1-1v-2.34" />
+    <path d="M6 4h12a2 2 0 0 1 2 2v3a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V6a2 2 0 0 1 2-2Z" />
+  </svg>
+);
+
 const App: React.FC = () => {
   // --- PWA INSTALL LOGIC ---
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -213,6 +236,7 @@ const App: React.FC = () => {
   const [editMatchOpponent, setEditMatchOpponent] = useState('');
   const [editMatchLocation, setEditMatchLocation] = useState('');
   const [editMatchUniform, setEditMatchUniform] = useState<'Azul' | 'Preto'>('Azul');
+  const [editMatchType, setEditMatchType] = useState<'amistoso' | 'campeonato'>('amistoso');
   const [editMatchDate, setEditMatchDate] = useState('');
   const [editMatchTime, setEditMatchTime] = useState('');
   const [editMatchLocationImg, setEditMatchLocationImg] = useState<string | null>(null);
@@ -297,6 +321,7 @@ const App: React.FC = () => {
   const [newMatchOpponent, setNewMatchOpponent] = useState('');
   const [newMatchLocation, setNewMatchLocation] = useState('');
   const [newMatchUniform, setNewMatchUniform] = useState<'Azul' | 'Preto'>('Azul');
+  const [newMatchType, setNewMatchType] = useState<'amistoso' | 'campeonato'>('amistoso');
   // Inicializa com o próximo domingo
   const [newMatchDate, setNewMatchDate] = useState(() => {
     const d = new Date();
@@ -536,6 +561,7 @@ const App: React.FC = () => {
           locationImg: m.location_img,
           location: m.location || '',
           uniform: m.uniform || 'Azul',
+          matchType: (m.match_type || 'amistoso') as 'amistoso' | 'campeonato',
           date: m.date,
           time: m.time,
           homeScore: m.home_score,
@@ -857,6 +883,7 @@ const App: React.FC = () => {
           opponent: newMatchOpponent, 
           location: newMatchLocation, 
           uniform: newMatchUniform,
+          match_type: newMatchType,
           date: newMatchDate, 
           time: newMatchTime, 
           location_img: newMatchLocationImg, 
@@ -864,8 +891,9 @@ const App: React.FC = () => {
           is_finished: false 
         };
         let { error } = await supabase.from('matches').insert([payload]);
-        if (error && error.message?.includes('uniform')) {
-          delete payload.uniform;
+        if (error && (error.message?.includes('match_type') || error.message?.includes('uniform'))) {
+          if (error.message?.includes('match_type')) delete payload.match_type;
+          if (error.message?.includes('uniform')) delete payload.uniform;
           const res = await supabase.from('matches').insert([payload]);
           error = res.error;
         }
@@ -874,6 +902,7 @@ const App: React.FC = () => {
     setNewMatchOpponent(''); 
     setNewMatchLocation(''); 
     setNewMatchUniform('Azul');
+    setNewMatchType('amistoso');
     // Reset date to next Sunday
     const d = new Date();
     d.setDate(d.getDate() + (d.getDay() === 0 ? 0 : 7 - d.getDay()));
@@ -891,6 +920,7 @@ const App: React.FC = () => {
     setEditMatchOpponent(match.opponent);
     setEditMatchLocation(match.location || '');
     setEditMatchUniform((match.uniform === 'Preto' ? 'Preto' : 'Azul') as 'Azul' | 'Preto');
+    setEditMatchType((match.matchType === 'campeonato' ? 'campeonato' : 'amistoso') as 'amistoso' | 'campeonato');
     setEditMatchDate(match.date);
     setEditMatchTime(match.time || '');
     setEditMatchLocationImg(match.locationImg || null);
@@ -908,6 +938,7 @@ const App: React.FC = () => {
           opponent: editMatchOpponent,
           location: editMatchLocation,
           uniform: editMatchUniform,
+          match_type: editMatchType,
           date: editMatchDate,
           time: editMatchTime,
           location_img: editMatchLocationImg,
@@ -917,8 +948,9 @@ const App: React.FC = () => {
           .update(payload)
           .eq('id', parseInt(editingMatch.id));
         
-        if (error && error.message?.includes('uniform')) {
-          delete payload.uniform;
+        if (error && (error.message?.includes('match_type') || error.message?.includes('uniform'))) {
+          if (error.message?.includes('match_type')) delete payload.match_type;
+          if (error.message?.includes('uniform')) delete payload.uniform;
           const res = await supabase
             .from('matches')
             .update(payload)
@@ -1582,6 +1614,33 @@ const App: React.FC = () => {
                                  </div>
                              </div>
                              <div className="flex flex-col items-center justify-center w-1/3 text-center px-1">
+                                 {/* Tag Amistoso / Campeonato */}
+                                 <div className="mb-1 flex items-center justify-center">
+                                   <span 
+                                     className={`inline-flex items-center gap-1 text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-2xs transition-all ${
+                                       (m.matchType || 'amistoso') === 'campeonato'
+                                         ? matchViewMode === 'upcoming'
+                                           ? 'bg-amber-400/30 text-black border-amber-500/40'
+                                           : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                         : matchViewMode === 'upcoming'
+                                           ? 'bg-black/15 text-black border-black/20'
+                                           : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10'
+                                     }`}
+                                     title={`Partida: ${(m.matchType || 'amistoso') === 'campeonato' ? 'Campeonato' : 'Amistoso'}`}
+                                   >
+                                     {(m.matchType || 'amistoso') === 'campeonato' ? (
+                                       <>
+                                         <TrophyIcon className="w-2.5 h-2.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                         <span className="leading-none">Campeonato</span>
+                                       </>
+                                     ) : (
+                                       <>
+                                         <HandshakeIcon className="w-2.5 h-2.5 shrink-0 opacity-80" />
+                                         <span className="leading-none">Amistoso</span>
+                                       </>
+                                     )}
+                                   </span>
+                                 </div>
                                  <div className="px-3 py-1.5 rounded-lg font-mono text-3xl font-bold mb-1">{m.isFinished ? `${m.homeScore}-${m.awayScore}` : 'VS'}</div>
                                  <div className="text-[10px] font-bold uppercase opacity-80 text-center leading-tight">
                                      <span>{new Date(m.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
@@ -2425,6 +2484,28 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="flex flex-col items-center justify-center px-2 md:px-4 flex-shrink-0">
+                        {/* Tag Amistoso ou Campeonato */}
+                        <div className="mb-1">
+                          <span 
+                            className={`inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-2xs ${
+                              (selectedMatch.matchType || 'amistoso') === 'campeonato'
+                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10'
+                            }`}
+                          >
+                            {(selectedMatch.matchType || 'amistoso') === 'campeonato' ? (
+                              <>
+                                <TrophyIcon className="w-2.5 h-2.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                <span className="leading-none">Campeonato</span>
+                              </>
+                            ) : (
+                              <>
+                                <HandshakeIcon className="w-2.5 h-2.5 shrink-0 opacity-80" />
+                                <span className="leading-none">Amistoso</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-2 md:gap-3 mb-1">
                           <input 
                             type="number" 
@@ -2718,6 +2799,45 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Tipo de Partida (Amistoso ou Campeonato) */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <span className="material-icons-outlined text-[13px]">emoji_events</span>
+                        Tipo de Partida
+                      </span>
+                      <span className="text-[8px] font-bold opacity-60">
+                        {newMatchType === 'campeonato' ? 'Valendo Pontos / Taça 🏆' : 'Jogo Treino / Amistoso 🤝'}
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewMatchType('amistoso')}
+                        className={`h-11 px-3 rounded-xl flex items-center justify-center gap-2 font-black text-xs uppercase border transition-all ${
+                          newMatchType === 'amistoso'
+                            ? 'bg-primary text-white border-primary shadow-md shadow-primary/25 ring-2 ring-primary/30'
+                            : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-primary/40'
+                        }`}
+                      >
+                        <HandshakeIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span>Amistoso</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewMatchType('campeonato')}
+                        className={`h-11 px-3 rounded-xl flex items-center justify-center gap-2 font-black text-xs uppercase border transition-all ${
+                          newMatchType === 'campeonato'
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/30 ring-2 ring-amber-500/40'
+                            : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-amber-500/40'
+                        }`}
+                      >
+                        <TrophyIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span>Campeonato</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Domingo & Uniforme lado a lado */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Coluna 1: Domingo */}
@@ -2858,6 +2978,45 @@ const App: React.FC = () => {
                       onChange={(e) => setEditMatchLocation(e.target.value)} 
                       className="w-full bg-gray-100 dark:bg-black/30 border border-black/5 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-bold placeholder:opacity-40 focus:ring-1 focus:ring-primary outline-none" 
                     />
+                  </div>
+                </div>
+
+                {/* Tipo de Partida (Amistoso ou Campeonato) */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase tracking-wider text-primary px-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <span className="material-icons-outlined text-[13px]">emoji_events</span>
+                      Tipo de Partida
+                    </span>
+                    <span className="text-[8px] font-bold opacity-60">
+                      {editMatchType === 'campeonato' ? 'Valendo Pontos / Taça 🏆' : 'Jogo Treino / Amistoso 🤝'}
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditMatchType('amistoso')}
+                      className={`h-11 px-3 rounded-xl flex items-center justify-center gap-2 font-black text-xs uppercase border transition-all ${
+                        editMatchType === 'amistoso'
+                          ? 'bg-primary text-white border-primary shadow-md shadow-primary/25 ring-2 ring-primary/30'
+                          : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-primary/40'
+                      }`}
+                    >
+                      <HandshakeIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span>Amistoso</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditMatchType('campeonato')}
+                      className={`h-11 px-3 rounded-xl flex items-center justify-center gap-2 font-black text-xs uppercase border transition-all ${
+                        editMatchType === 'campeonato'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/30 ring-2 ring-amber-500/40'
+                          : 'bg-gray-100 dark:bg-black/30 border-black/5 dark:border-white/10 text-muted-light hover:border-amber-500/40'
+                      }`}
+                    >
+                      <TrophyIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span>Campeonato</span>
+                    </button>
                   </div>
                 </div>
 
